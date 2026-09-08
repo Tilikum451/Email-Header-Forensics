@@ -1,0 +1,2210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Header Forensics v2</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 L27 8 V16 C27 23 22 28 16 30 C10 28 5 23 5 16 V8 Z' fill='%23e3a83a'/%3E%3Cpath d='M10.5 16.5 L14 20 L22 11' stroke='%230a0d0e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+<link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 L27 8 V16 C27 23 22 28 16 30 C10 28 5 23 5 16 V8 Z' fill='%23e3a83a'/%3E%3Cpath d='M10.5 16.5 L14 20 L22 11' stroke='%230a0d0e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d0e;
+    --panel:#12181b;
+    --panel-raised:#161d21;
+    --line:#213036;
+    --line-soft:#182228;
+    --ink:#d7e2df;
+    --ink-dim:#7d928f;
+    --ink-faint:#4c5e5c;
+    --amber:#e3a83a;
+    --amber-dim:#8a6a2c;
+    --red:#e05f4d;
+    --green:#5fc296;
+    --cyan:#5ba8c4;
+    --purple:#a67fd1;
+    --mono:'IBM Plex Mono',Consolas,monospace;
+    --disp:'Space Grotesk',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(227,168,58,.05), transparent),
+      var(--bg);
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:13.5px;
+    line-height:1.55;
+    min-height:100vh;
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:36px 22px 70px;}
+
+  .hdr{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:1px solid var(--line);
+    padding-bottom:16px;
+    margin-bottom:26px;
+  }
+  .hdr .brand{display:flex;align-items:center;gap:10px;}
+  .hdr h1{
+    font-family:var(--disp);
+    font-size:19px;
+    letter-spacing:.01em;
+    margin:0;
+    color:var(--ink);
+    font-weight:700;
+  }
+  .hdr .tag{color:var(--ink-faint);font-size:10.5px;letter-spacing:.04em;text-align:right;line-height:1.3;}
+  .mark{width:26px;height:26px;flex-shrink:0;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px;
+  }
+  textarea{
+    width:100%;
+    min-height:240px;
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:12px;
+    padding:12px 14px;
+    resize:vertical;
+    outline:none;
+    transition:border-color .15s;
+  }
+  textarea::placeholder{color:var(--ink-faint);}
+  textarea:focus{border-color:var(--amber-dim);}
+  .row{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+  button{
+    background:var(--amber);
+    color:#1a1305;
+    border:none;
+    border-radius:5px;
+    font-family:var(--disp);
+    font-weight:600;
+    letter-spacing:.02em;
+    font-size:12.5px;
+    padding:9px 18px;
+    cursor:pointer;
+    transition:transform .1s, background .15s;
+  }
+  button:hover{background:#f0b84a;transform:translateY(-1px);}
+  button:active{transform:translateY(0);}
+  button.ghost{
+    background:transparent;
+    color:var(--ink-dim);
+    border:1px solid var(--line);
+    font-weight:500;
+  }
+  button.ghost:hover{color:var(--ink);border-color:var(--ink-faint);background:transparent;transform:none;}
+  .hint{color:var(--ink-faint);font-size:11px;margin-top:10px;display:flex;gap:6px;align-items:center;}
+
+  details.custom-brands{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
+  details.custom-brands summary{cursor:pointer;color:var(--ink-dim);font-size:11.5px;font-weight:600;letter-spacing:.03em;list-style:none;}
+  details.custom-brands summary::-webkit-details-marker{display:none;}
+  details.custom-brands summary:hover{color:var(--ink);}
+  details.custom-brands textarea{min-height:70px;font-size:11.5px;margin-top:10px;}
+  code{background:var(--panel-raised);border:1px solid var(--line);border-radius:3px;padding:1px 5px;font-size:10.5px;}
+
+  #result{margin-top:32px;display:none;animation:fadeUp .4s ease;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+  .verdict-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px 24px;
+    display:grid;
+    grid-template-columns:120px 1fr;
+    gap:24px;
+    align-items:center;
+    margin-bottom:22px;
+  }
+  /* Wrapper is taller than the 78px-tall SVG arc: the arc sits in the top
+     78px (drawGauge()'s svg is anchored top:0 to match), leaving a clear
+     18px band below it for the label and sub-label so they don't collide.
+     The previous 78px-tall wrapper positioned the label at bottom:-2 (top
+     edge around y=50-54) and the sub-label at top:52 (spanning to ~64) —
+     their boxes overlapped by design math, not just at small sizes; it
+     rendered as the "100"/"RISK SCORE" text drawn on top of each other. */
+  .gauge-wrap{position:relative;width:120px;height:96px;}
+  .gauge-label{
+    position:absolute;
+    top:56px;left:0;right:0;
+    text-align:center;
+    font-family:var(--disp);
+    font-size:20px;
+    font-weight:700;
+    line-height:1.2;
+  }
+  .gauge-sub{
+    position:absolute;
+    top:84px;left:0;right:0;
+    text-align:center;
+    font-size:9px;
+    color:var(--ink-faint);
+    letter-spacing:.08em;
+  }
+  .v-low .gauge-label{color:var(--green);}
+  .v-med .gauge-label{color:var(--amber);}
+  .v-high .gauge-label{color:var(--red);}
+
+  .verdict-text .badge{
+    display:inline-block;
+    font-family:var(--disp);
+    font-weight:700;
+    font-size:13px;
+    letter-spacing:.06em;
+    padding:3px 10px;
+    border-radius:4px;
+    margin-bottom:8px;
+  }
+  .verdict-text .desc{color:var(--ink-dim);line-height:1.6;font-size:13px;}
+
+  .spam-banner, .impersonate-banner{
+    display:flex;
+    align-items:flex-start;
+    gap:14px;
+    border-radius:8px;
+    padding:14px 16px;
+    margin-bottom:18px;
+    border-left:4px solid;
+  }
+  .banner-med{background:rgba(227,168,58,.12);border-left-color:var(--amber);}
+  .b-icon{font-size:18px;flex-shrink:0;margin-top:2px;}
+  .b-title{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.05em;margin-bottom:4px;color:var(--ink);}
+  .b-desc{font-size:12.5px;color:var(--ink-dim);line-height:1.5;}
+
+  /* HIGH-severity banners get a distinctly more alarming treatment than
+     MEDIUM — solid red border all around (not just a left accent), a
+     brighter gradient fill, a glowing/pulsing shadow, an uppercase title
+     with letter-spacing, and a pulsing icon. Medium-severity banners are
+     deliberately left calmer so HIGH still reads as categorically more
+     urgent, not just a bigger version of the same thing. */
+  .banner-high{
+    position:relative;
+    background:linear-gradient(135deg, rgba(224,95,77,.28), rgba(224,95,77,.12));
+    border:2px solid var(--red);
+    border-left-width:7px;
+    padding:16px 18px;
+    box-shadow:0 0 0 1px rgba(224,95,77,.2), 0 6px 22px -4px rgba(224,95,77,.45);
+    animation:bannerPulse 1.8s ease-in-out infinite;
+  }
+  .banner-high .b-icon{
+    font-size:24px;
+    animation:iconPulse 1.2s ease-in-out infinite;
+  }
+  .banner-high .b-title{
+    color:var(--red);
+    font-size:13.5px;
+    letter-spacing:.09em;
+    text-transform:uppercase;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .banner-high .b-title::after{
+    content:'URGENT';
+    font-size:9px;
+    font-weight:700;
+    letter-spacing:.1em;
+    background:var(--red);
+    color:#1a0a08;
+    padding:2px 7px;
+    border-radius:3px;
+    vertical-align:middle;
+  }
+  .banner-high .b-desc{color:var(--ink);}
+
+  @keyframes bannerPulse{
+    0%, 100%{ box-shadow:0 0 0 1px rgba(224,95,77,.2), 0 6px 22px -4px rgba(224,95,77,.45); }
+    50%{ box-shadow:0 0 0 2px rgba(224,95,77,.5), 0 8px 34px -2px rgba(224,95,77,.75); }
+  }
+  @keyframes iconPulse{
+    0%, 100%{ transform:scale(1); }
+    50%{ transform:scale(1.18); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .banner-high{ animation:none; }
+    .banner-high .b-icon{ animation:none; }
+  }
+
+  .spam-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    min-width:0;
+    margin-bottom:22px;
+  }
+  /* Without flex-wrap, the label/description block plus the nowrap pill
+     badge next to it force this flex item's min-content width above what
+     its 1fr share in the two-column grid below can offer once the viewport
+     gets narrow — confirmed live: the second card's right edge landed
+     exactly on the viewport edge, eating the page's own right padding.
+     Wrapping lets the pill drop under the text instead of pushing the card
+     wider than its column. */
+  .s-label{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.05em;color:var(--ink);margin-bottom:4px;}
+  .s-desc{font-size:12px;color:var(--ink-dim);}
+  .spam-pill, .identity-pill{
+    display:inline-block;
+    font-family:var(--disp);
+    font-weight:700;
+    font-size:11px;
+    letter-spacing:.04em;
+    padding:6px 12px;
+    border-radius:20px;
+  }
+  .spam-low{background:rgba(95,194,150,.2);color:var(--green);}
+  .spam-med{background:rgba(227,168,58,.2);color:var(--amber);}
+  .spam-high{background:rgba(224,95,77,.2);color:var(--red);}
+  .identity-low{background:rgba(95,194,150,.2);color:var(--green);}
+  .identity-med{background:rgba(227,168,58,.2);color:var(--amber);}
+  .identity-high{background:rgba(224,95,77,.2);color:var(--red);}
+
+  .section-title{
+    font-family:var(--disp);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.06em;
+    color:var(--ink);
+    text-transform:uppercase;
+    margin-top:26px;
+    margin-bottom:12px;
+    padding-bottom:8px;
+    border-bottom:1px solid var(--line);
+  }
+
+  .findings-list{display:flex;flex-direction:column;gap:10px;}
+  .finding{
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:12px 14px;
+    display:grid;
+    grid-template-columns:20px 1fr;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .finding.sev-high{border-left:3px solid var(--red);}
+  .finding.sev-med{border-left:3px solid var(--amber);}
+  .finding.sev-low{border-left:3px solid var(--cyan);}
+  .finding.sev-info{border-left:3px solid var(--ink-faint);}
+  .finding.sev-pass{border-left:3px solid var(--green);}
+  .sev-icon{font-size:14px;margin-top:1px;}
+  .f-key{
+    font-weight:600;
+    color:var(--ink);
+    display:block;
+    margin-bottom:4px;
+    font-size:12px;
+  }
+  .f-detail{
+    font-size:12px;
+    color:var(--ink-dim);
+    line-height:1.5;
+    display:block;
+  }
+  .cat-chip{
+    display:inline-block;
+    font-family:var(--disp);
+    font-size:9px;
+    font-weight:700;
+    letter-spacing:.04em;
+    padding:2px 6px;
+    border-radius:3px;
+    margin-right:6px;
+    text-transform:uppercase;
+  }
+  .cat-auth{background:rgba(91,168,196,.2);color:var(--cyan);}
+  .cat-spam{background:rgba(224,95,77,.2);color:var(--red);}
+  .cat-spoof{background:rgba(224,95,77,.2);color:var(--red);}
+  .cat-identity{background:rgba(166,127,209,.2);color:var(--purple);}
+  .cat-structure{background:rgba(227,168,58,.2);color:var(--amber);}
+  .cat-content{background:rgba(227,168,58,.2);color:var(--amber);}
+
+  .extract-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .extract-row{
+    display:grid;
+    grid-template-columns:140px 1fr;
+    gap:16px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .extract-row:last-child{border-bottom:none;}
+  .extract-row .k{
+    color:var(--ink-faint);
+    font-weight:600;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+  }
+  .extract-row .v{
+    color:var(--ink);
+    word-break:break-all;
+  }
+  .auth-pills{display:flex;gap:6px;flex-wrap:wrap;}
+  .pill{
+    display:inline-block;
+    font-family:var(--disp);
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.04em;
+    padding:4px 8px;
+    border-radius:3px;
+  }
+  .pill.pass{background:rgba(95,194,150,.2);color:var(--green);}
+  .pill.fail{background:rgba(224,95,77,.2);color:var(--red);}
+  .pill.neutral{background:rgba(125,146,143,.2);color:var(--ink-dim);}
+
+  .empty-note{
+    color:var(--ink-faint);
+    font-style:italic;
+    padding:20px;
+    text-align:center;
+  }
+
+  .footer-note{
+    font-size:11px;
+    color:var(--ink-faint);
+    margin-top:32px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+    line-height:1.6;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 4 L27 8 V16 C27 23 22 28 16 30 C10 28 5 23 5 16 V8 Z" fill="currentColor"/><path d="M10.5 16.5 L14 20 L22 11" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <h1>Header Forensics</h1>
+    </div>
+    <div class="tag">v2.0<br>improved detection</div>
+  </div>
+
+  <div class="panel">
+    <textarea id="input" placeholder="Paste full email headers (From: through end of message body) here..."></textarea>
+    <div class="row">
+      <button onclick="analyze()">Analyze</button>
+      <button class="ghost" onclick="document.getElementById('input').value=''">Clear</button>
+    </div>
+    <div class="hint">
+      <span>💡</span>
+      <span>Include body content for brand impersonation and obfuscation detection. Authentication checks work on headers alone.</span>
+    </div>
+    <details class="custom-brands">
+      <summary>+ Custom brands (advanced)</summary>
+      <div class="hint" style="margin-top:10px;">One per line: <code>key | domain[;altDomain] | Name1[;Name2]</code> — e.g. <code>acmecorp | acme.com | Acme Corp;Acme</code>. No need to press Enter or save — just type here, then click Analyze above.</div>
+      <textarea id="customBrands" placeholder="acmecorp | acme.com | Acme Corp;Acme" oninput="document.getElementById('customBrandsStatus').innerHTML = renderCustomBrandsStatus(this.value)"></textarea>
+      <div id="customBrandsStatus" class="hint" style="margin-top:8px;"></div>
+    </details>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+const ICONS = {
+  high: '⚠️',
+  med: '⚡',
+  low: 'ℹ️',
+  info: '◆'
+};
+
+const WARN_ICON = '⚠️';
+
+function urlDomain(url){
+  try{
+    const u = new URL(url);
+    return u.hostname;
+  }catch(e){
+    const m = url.match(/https?:\/\/([^\/\?#]+)/);
+    return m ? m[1] : null;
+  }
+}
+
+// Not exhaustive (a real public-suffix-list lookup would be needed for full
+// coverage) but covers the common two-label ccTLD suffixes that would
+// otherwise be mis-rooted by the naive "last two labels" rule below — e.g.
+// "hmrc.gov.uk" would incorrectly root to "gov.uk" instead of "hmrc.gov.uk".
+const KNOWN_TWO_LABEL_SUFFIXES = new Set([
+  'co.uk','org.uk','gov.uk','ac.uk','ltd.uk','plc.uk','me.uk','net.uk',
+  'com.au','net.au','org.au','gov.au','co.nz','net.nz','org.nz','govt.nz',
+  'co.jp','ne.jp','or.jp','com.br','com.mx','co.in','co.za','com.cn','co.kr'
+]);
+
+// Some platforms share a THREE-label suffix the way "gov.uk" shares a
+// two-label one — the meaningful, service-identifying label sits in FRONT of
+// the whole thing, not behind it. UK government digital services are the
+// clearest example: "tax.service.gov.uk", "personal-tax.service.gov.uk", and
+// countless others all share "service.gov.uk", with "tax"/"personal-tax"/etc.
+// as the actual distinguishing identity. Without this, rootDomain() collapses
+// "tax.service.gov.uk" down to "service.gov.uk" — discarding "tax", the one
+// label that actually says which government service this is — confirmed
+// live: a genuine HMRC email from tax.service.gov.uk failed its own
+// brand-authorization check for exactly this reason.
+const KNOWN_THREE_LABEL_SUFFIXES = new Set([
+  'service.gov.uk'
+]);
+
+function rootDomain(domain){
+  if(!domain) return '';
+  const parts = domain.toLowerCase().split('.').filter(Boolean);
+  if(parts.length <= 2) return parts.join('.');
+  if(parts.length > 3){
+    const lastThree = parts.slice(-3).join('.');
+    if(KNOWN_THREE_LABEL_SUFFIXES.has(lastThree)){
+      return parts.slice(-4).join('.');
+    }
+  }
+  const lastTwo = parts.slice(-2).join('.');
+  if(KNOWN_TWO_LABEL_SUFFIXES.has(lastTwo)){
+    return parts.slice(-3).join('.');
+  }
+  return lastTwo;
+}
+
+function extractUrls(text){
+  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]*[^\s<>"{}|\\^`\[\].,:;!?()]/gi;
+  return (text.match(urlRegex) || []);
+}
+
+// extractUrls() scanned raw HTML for any http(s) URL, which also picks up
+// @font-face src url(...) references and other non-navigable asset URLs
+// living inside <style> blocks. Confirmed live: a legitimate email's
+// stylesheet referencing Google Fonts (fonts.gstatic.com) got counted as
+// "the message links to this external domain," which combined with an
+// unrelated "click." subdomain match to produce a false "third-party click
+// tracker + external domain" finding.
+//
+// The fix is scoped to that specific source, not "only extract <a href>":
+// a first attempt restricting extraction to anchor href attributes broke
+// plain-text email bodies entirely (no <a> tags exist there at all — a bare
+// "http://phishing-site.com/login" in a text/plain body would then vanish
+// from bodyLinkDomains, silently defeating the brand-impersonation link
+// check for what is arguably the most common phishing body format).
+// Stripping <style>/<script> blocks before the same blind URL scan removes
+// the actual false-positive source while leaving plain-text bare URLs and
+// real HTML anchors both intact.
+function extractBodyLinkUrls(bodyText){
+  const withoutStyleAndScript = bodyText.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ');
+  return extractUrls(withoutStyleAndScript);
+}
+
+function unfoldHeaderBlock(raw){
+  // Only unfold the header section (before the first blank line) so folded
+  // header values become single lines; leave the message body untouched.
+  const idx = raw.search(/\r?\n\r?\n/);
+  const headerBlock = idx === -1 ? raw : raw.slice(0, idx);
+  const rest = idx === -1 ? '' : raw.slice(idx);
+  const unfolded = headerBlock.replace(/\r?\n[ \t]+/g, ' ');
+  return unfolded + rest;
+}
+
+function decodeQuotedPrintable(text){
+  return text.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function decodeBase64Safe(text){
+  try{
+    const cleaned = text.replace(/\s+/g, '');
+    if(!cleaned || /[^A-Za-z0-9+/=]/.test(cleaned)) return null;
+    return atob(cleaned);
+  }catch(e){ return null; }
+}
+
+// RFC 2047 "encoded-word" decoding: =?charset?B|Q?encoded-text?=. Header
+// fields (From display name, Subject) are frequently MIME-encoded when they
+// contain non-ASCII text — but every brand-name/authority-language regex in
+// this tool matches against the RAW header text. Without decoding first, an
+// attacker can bypass every one of those checks just by encoding the header,
+// e.g. "=?UTF-8?B?UGF5UGFsIFNlY3VyaXR5?=" decodes to "PayPal Security" but
+// never matches /\bPayPal\b/i in its still-encoded form.
+function decodeMimeWords(str){
+  if(!str) return str;
+  // Adjacent encoded-words separated only by whitespace are one logical run
+  // of text — RFC 2047 treats the whitespace between them as a transport
+  // artifact, not content, so drop it before decoding.
+  const joined = str.replace(/(\?=)[ \t]+(=\?)/g, '$1$2');
+  return joined.replace(/=\?([^?\s]+)\?([BbQq])\?([^?]*)\?=/g, (whole, charset, encoding, text) => {
+    try{
+      let binary;
+      if(encoding.toUpperCase() === 'B'){
+        binary = decodeBase64Safe(text);
+        if(binary === null) return whole;
+      } else {
+        binary = decodeQuotedPrintable(text.replace(/_/g, ' '));
+      }
+      const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0) & 0xFF);
+      return new TextDecoder(charset.toLowerCase()).decode(bytes);
+    }catch(e){ return whole; }
+  });
+}
+
+// Collapsing ALL whitespace (including newlines) to single spaces made this
+// function's only caller — the repeated-block spam check below — structurally
+// unable to ever fire: it splits on '\n' looking for a block repeated 3+
+// times, but plainBodyText never contained a '\n' to split on. A spam kit
+// that pads a message with the same "quoted reply" block repeated 6+ times
+// sailed through with zero detection, confirmed live. Block-level tags are
+// now converted to newlines BEFORE stripping, so paragraph/line structure
+// survives — only the horizontal whitespace within each line is collapsed.
+function stripHtmlToText(html){
+  return html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, ' ')
+    .split('\n').map(l => l.trim()).filter(Boolean).join('\n')
+    .trim();
+}
+
+function decodePartBody(partHeaders, partBody){
+  if(/content-transfer-encoding:\s*quoted-printable/i.test(partHeaders)){
+    return decodeQuotedPrintable(partBody);
+  }
+  if(/content-transfer-encoding:\s*base64/i.test(partHeaders)){
+    const decoded = decodeBase64Safe(partBody);
+    return decoded !== null ? decoded : partBody;
+  }
+  return partBody;
+}
+
+// Splits a raw header+body blob into {headers, body} at the first blank line.
+function splitHeadersAndBody(block){
+  const idx = block.search(/\r?\n\r?\n/);
+  if(idx === -1) return { headers: block, body: '' };
+  const sepMatch = block.slice(idx).match(/^\r?\n\r?\n/);
+  return { headers: block.slice(0, idx), body: block.slice(idx + sepMatch[0].length) };
+}
+
+// Best-effort MIME body extractor. Handles both multipart messages (walks
+// parts, recursing into nested multipart/alternative, preferring text/html
+// then text/plain) and single-part messages, which the previous version of
+// this tool did not decode at all — it just grabbed the raw text between the
+// first two blank lines, so quoted-printable/base64 single-part bodies (a
+// very common case — most simple marketing/phishing emails aren't multipart)
+// were never actually scanned for links, topic-mixing, or duplication.
+function extractBodyText(raw, depth){
+  depth = depth || 0;
+  if(depth > 4) return ''; // guard against pathological/malicious nesting
+
+  const { headers, body } = splitHeadersAndBody(raw);
+  const boundaryMatch = headers.match(/boundary="?([^\s";]+)"?/i);
+  const isMultipart = /^content-type:\s*multipart\//im.test(headers) && boundaryMatch;
+
+  if(!isMultipart){
+    return decodePartBody(headers, body);
+  }
+
+  const boundary = boundaryMatch[1];
+  // Split on the boundary delimiter; ignore the preamble (parts[0]) and the
+  // trailing close-delimiter part (starts with "--", i.e. boundary + "--").
+  const rawParts = body.split(new RegExp('^--' + boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:--)?\\s*$', 'm'));
+  const candidates = [];
+  for(let i = 1; i < rawParts.length; i++){
+    const partBlock = rawParts[i].replace(/^\r?\n/, '');
+    if(!partBlock.trim()) continue;
+    const { headers: pHeaders, body: pBody } = splitHeadersAndBody(partBlock);
+    const ctMatch = pHeaders.match(/Content-Type:\s*([^\s;]+)/i);
+    const ct = ctMatch ? ctMatch[1].toLowerCase() : 'text/plain';
+    if(ct.startsWith('multipart/')){
+      const nested = extractBodyText(partBlock, depth + 1);
+      if(nested) candidates.push({ ct: 'text/html', text: nested }); // treat nested result as HTML-priority
+    } else if(ct === 'text/html' || ct === 'text/plain'){
+      candidates.push({ ct, text: decodePartBody(pHeaders, pBody) });
+    }
+  }
+  const html = candidates.find(c => c.ct === 'text/html');
+  if(html) return html.text;
+  const plain = candidates.find(c => c.ct === 'text/plain');
+  if(plain) return plain.text;
+  return candidates.length ? candidates[0].text : '';
+}
+
+function drawGauge(score, vClass){
+  const pct = score;
+  const colors = {
+    'v-low': '#5fc296',
+    'v-med': '#e3a83a',
+    'v-high': '#e05f4d'
+  };
+  const color = colors[vClass] || '#999';
+  // Semicircle of radius r centered at (cx,cy): endpoints must be exactly
+  // 2*r apart for the arc's rx/ry to actually render at that radius. The
+  // previous path spanned x=10..110 (100px) while claiming r=40 (2*r=80) —
+  // since the SVG arc spec auto-scales rx/ry up whenever the chord exceeds
+  // the diameter, the browser silently rendered it at r=50, while the
+  // progress endpoint below was still computed off r=40. The two disagreed
+  // for every score except 0/50/100, so the fill never actually sat on the
+  // visible track. Endpoints and trig now agree on the same r.
+  const cx = 60, cy = 50, r = 40;
+  const angle = Math.PI - (Math.max(0, Math.min(100, pct)) / 100) * Math.PI; // pi (0%) -> 0 (100%)
+  const x = cx + r * Math.cos(angle);
+  const y = cy - r * Math.sin(angle);
+  return `<svg width="120" height="78" viewBox="0 0 120 78" style="position:absolute;top:0;left:0;">
+    <path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#213036" stroke-width="8" stroke-linecap="round"/>
+    <path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${x} ${y}" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// Every value interpolated into innerHTML below can originate from an
+// attacker-controlled email (header fields, subject, decoded body text). This
+// tool's entire purpose is to safely inspect hostile input, so every dynamic
+// value MUST be escaped before insertion — without this, a crafted header
+// (e.g. From: <img src=x onerror=...>) executes arbitrary JS in the analyst's
+// browser the moment they click Analyze.
+function escapeHtml(str){
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function pillClass(val){
+  if(val === 'pass') return 'pass';
+  if(val === 'fail') return 'fail';
+  return 'neutral';
+}
+
+// ============================================
+// BRAND IMPERSONATION DETECTION
+// ============================================
+
+// All displayName regexes carry the 'i' flag: phishing display names vary
+// case constantly ("Paypal", "AMAZON Support", "netflix billing") and a
+// case-sensitive match let those sail through with zero impersonation score
+// — confirmed live: "Paypal Security <security@paypal-alerts-billing.com>"
+// scored LOW RISK/LEGITIMATE against the case-sensitive /PayPal/ regex.
+//
+// Every alternative is also wrapped in \b...\b. Without it, "UPS" (and to a
+// lesser extent short/common tokens generally) substring-matches ordinary
+// English words — confirmed live: the subject "Notes from our study groups
+// this week" was read as a UPS mention purely because "groups" contains
+// "ups". \b anchoring requires the brand token to appear as its own word.
+const TRUSTED_BRANDS = {
+  nhs: { domain: 'nhs.uk', alts: [], displayName: /\b(?:NHS|National Health Service)\b/i },
+  paypal: { domain: 'paypal.com', alts: ['paypal.de', 'paypal.fr'], displayName: /\bPayPal\b/i },
+  microsoft: { domain: 'microsoft.com', alts: ['outlook.com', 'live.com'], displayName: /\bMicrosoft\b/i },
+  amazon: { domain: 'amazon.com', alts: ['amazon.co.uk', 'amazon.de'], displayName: /\bAmazon\b/i },
+  apple: { domain: 'apple.com', alts: [], displayName: /\b(?:Apple|iCloud)\b/i },
+  google: { domain: 'google.com', alts: ['gmail.com'], displayName: /\bGoogle\b/i },
+  netflix: { domain: 'netflix.com', alts: [], displayName: /\bNetflix\b/i },
+  // HMRC's real transactional-mail domain is tax.service.gov.uk (confirmed
+  // via a live DKIM d= value and DMARC header.from), not hmrc.gov.uk — UK
+  // government digital services are named by service, not by department,
+  // under the shared "*.service.gov.uk" pattern. Without this alt, every
+  // genuine HMRC paperless notification email fails its own authorization
+  // check and gets branded a HIGH-severity impersonation.
+  hmrc: { domain: 'hmrc.gov.uk', alts: ['tax.service.gov.uk'], displayName: /\b(?:HMRC|Revenue|Customs)\b/i },
+  dhl: { domain: 'dhl.com', alts: [], displayName: /\bDHL\b/i },
+  fedex: { domain: 'fedex.com', alts: [], displayName: /\bFedEx\b/i },
+  ups: { domain: 'ups.com', alts: [], displayName: /\b(?:UPS|United Parcel)\b/i },
+  hsbc: { domain: 'hsbc.com', alts: ['hsbc.co.uk'], displayName: /\bHSBC\b/i },
+  barclays: { domain: 'barclays.com', alts: ['barclays.co.uk'], displayName: /\bBarclays\b/i },
+  lloyds: { domain: 'lloyds.com', alts: ['lloydsbankinggroup.com'], displayName: /\b(?:Lloyds|LloydsTSB)\b/i },
+  natwest: { domain: 'natwest.com', alts: ['rbs.co.uk'], displayName: /\b(?:Nat[aW]est|RBS|Royal Bank)\b/i },
+  santander: { domain: 'santander.com', alts: ['santander.co.uk'], displayName: /\bSantander\b/i }
+};
+
+// Shared by every check below that needs to reason about "what identity is
+// this sender presenting" as opposed to the address itself: the free-text
+// name before the angle-bracketed address (e.g. "PayPal Security" in
+// "PayPal Security <x@evil.com>"). A bare address with no bracketed form
+// (e.g. From: alice@example.com) has no display name at all.
+function extractDisplayName(fromRaw){
+  if(!fromRaw) return '';
+  const m = fromRaw.match(/^([^<]+)</);
+  if(!m) return '';
+  let name = m[1].trim();
+  // RFC 5322 allows (and real senders commonly use) a quoted-string display
+  // name: From: "Experian" <email@...>. Confirmed live: leaving the quote
+  // characters in place made every downstream word-match compare the literal
+  // token "experian" (quotes included) against the domain, which of course
+  // never matches — producing a false "Display name / domain misalignment"
+  // finding on an otherwise perfectly aligned, legitimate sender.
+  if(name.length >= 2 && name.startsWith('"') && name.endsWith('"')){
+    name = name.slice(1, -1).trim();
+  }
+  return name;
+}
+
+function escapeRegExp(s){
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// TRUSTED_BRANDS only covers 16 fixed companies — an org running this tool
+// almost certainly wants to also flag impersonation of its own name, internal
+// apps, or regional banks/couriers not on that list. Rather than requiring a
+// hand-written (and easy to get subtly wrong — see the case-sensitivity and
+// word-boundary bugs fixed above) regex, custom brands are plain names that
+// get escaped and \b-wrapped the same way the built-in list is. One line per
+// brand: key | domain[;altDomain;...] | Name1[;Name2;...]
+function parseCustomBrands(text){
+  const brands = {};
+  if(!text) return brands;
+  text.split(/\r?\n/).forEach(line => {
+    line = line.trim();
+    if(!line || line.startsWith('#')) return;
+    const parts = line.split('|');
+    if(parts.length < 3) return;
+    const key = parts[0].trim().toLowerCase();
+    const domains = parts[1].split(';').map(d => d.trim()).filter(Boolean);
+    const names = parts[2].split(';').map(n => n.trim()).filter(Boolean).map(escapeRegExp);
+    if(!key || !domains.length || !names.length) return;
+    brands[key] = {
+      domain: domains[0],
+      alts: domains.slice(1),
+      displayName: new RegExp('\\b(?:' + names.join('|') + ')\\b', 'i')
+    };
+  });
+  return brands;
+}
+
+// parseCustomBrands() above silently skips anything malformed — correct for
+// analysis (a bad line just contributes nothing), but useless as feedback:
+// there was no way to tell "I typed something and it's in effect" from "I
+// typed something and it was silently ignored" until an Analyze click
+// produced (or failed to produce) a finding. This mirrors the same parsing
+// rules but reports every line's outcome, so the UI can confirm what was
+// understood as you type — before you've pasted any email at all.
+function describeCustomBrands(text){
+  const result = { validKeys: [], invalidLines: [] };
+  if(!text) return result;
+  text.split(/\r?\n/).forEach((line, idx) => {
+    const trimmed = line.trim();
+    if(!trimmed || trimmed.startsWith('#')) return;
+    const parts = trimmed.split('|');
+    if(parts.length < 3){
+      result.invalidLines.push({ lineNumber: idx + 1, raw: trimmed, reason: 'needs 3 parts separated by "|": key | domain | name' });
+      return;
+    }
+    const key = parts[0].trim().toLowerCase();
+    const domains = parts[1].split(';').map(d => d.trim()).filter(Boolean);
+    const names = parts[2].split(';').map(n => n.trim()).filter(Boolean);
+    if(!key || !domains.length || !names.length){
+      result.invalidLines.push({ lineNumber: idx + 1, raw: trimmed, reason: 'missing key, domain, or name' });
+      return;
+    }
+    result.validKeys.push(key);
+  });
+  return result;
+}
+
+function renderCustomBrandsStatus(text){
+  if(!text || !text.trim()) return '';
+  const { validKeys, invalidLines } = describeCustomBrands(text);
+  let html = '';
+  if(validKeys.length){
+    html += `<div style="color:var(--green);">✓ ${validKeys.length} custom brand${validKeys.length === 1 ? '' : 's'} recognized: ${escapeHtml(validKeys.map(k => k.toUpperCase()).join(', '))}</div>`;
+  }
+  invalidLines.forEach(l => {
+    html += `<div style="color:var(--amber);">⚠ Line ${l.lineNumber} not recognized (${escapeHtml(l.reason)}): "${escapeHtml(l.raw)}"</div>`;
+  });
+  return html;
+}
+
+function detectBrandImpersonation(fromRaw, fromDomain, bodyText, bodyLinkDomains, subject, brands){
+  const findings = [];
+  let impersonationScore = 0;
+  // True when a display-name identity claim was checked against the curated
+  // brand list AND the sending domain is one of that brand's own authorized
+  // domains — i.e. this exact pairing was actively confirmed safe, not just
+  // "no problem found." Callers use this to suppress the cruder generic
+  // display-name/domain substring check (detectDisplayNameMismatch), which
+  // has no concept of known institutional domain patterns and would
+  // otherwise contradict a match this list already vouches for — confirmed
+  // live: "HMRC digital" <...@tax.service.gov.uk> is a verified, authorized
+  // HMRC sender, but "hmrc"/"digital" never substring-match
+  // "tax.service.gov.uk" (UK gov names services, not departments, in the
+  // domain), so the generic check flagged it as misaligned regardless.
+  let recognizedAsAuthorizedBrand = false;
+
+  if(!fromRaw && !subject) return { findings, score: 0, recognizedAsAuthorizedBrand };
+
+  const bodyLower = (bodyText || '').toLowerCase();
+  const subjectText = subject || '';
+  // Only the actual From *display name* — not the whole From header — counts
+  // as an identity claim. This function used to be handed the entire raw
+  // From header (name + bracketed address) as "fromDisplay" and tested the
+  // brand regex against that whole string, so a bare address with NO display
+  // name at all (e.g. From: <alerts@paypal-verify.com>) still satisfied
+  // "identityClaim" purely because the regex matched inside the domain —
+  // producing a finding worded "Display name claims to be from PAYPAL" when
+  // there was no display name in the message at all. That's a real,
+  // separately-worth-flagging signal (a lookalike domain), just not this one
+  // — see domainHasBrandToken below.
+  const displayName = extractDisplayName(fromRaw);
+
+  for(const [brandKey, brandInfo] of Object.entries(brands)){
+    // Distinguish an actual *identity claim* ("this message is from BRAND")
+    // from a merely *topical mention* ("this message is about something
+    // involving BRAND"). Only the From display name is a real identity
+    // claim — a Subject or body that happens to contain a brand/authority
+    // name is extremely common in ordinary correspondence (e.g. a friend
+    // forwarding "Fwd: NHS appointment confirmed for mum" from their own
+    // Gmail account) and must NOT, by itself, be treated as impersonation.
+    // Earlier revisions of this check used subject/body mentions as a
+    // primary trigger and produced exactly that false positive.
+    const identityClaim = brandInfo.displayName.test(displayName);
+    const subjectMentionsBrand = brandInfo.displayName.test(subjectText);
+    // Word-boundary match, not a raw substring test: brandKey values like
+    // "ups" are plain English substrings ("gr-ups", i.e. "groups", "sign-
+    // ups") — bodyLower.includes(brandKey) flagged ordinary mail like "study
+    // groups" and "signups" as referencing UPS.
+    const bodyMentionsBrand = new RegExp('\\b' + brandKey + '\\b', 'i').test(bodyLower);
+    // The sending domain itself contains the brand's name/token — e.g.
+    // "paypal-verify.com" or "amazon-support.net" — independent of whatever
+    // (if anything) the display name says. Classic lookalike/typosquat-domain
+    // pattern. Guarded below by !senderIsAuthorized so the brand's own real
+    // domain (which of course also matches) never trips this.
+    const domainHasBrandToken = !!fromDomain && brandInfo.displayName.test(fromDomain);
+
+    if(!identityClaim && !subjectMentionsBrand && !bodyMentionsBrand && !domainHasBrandToken) continue;
+
+    const allAuthorizedDomains = [brandInfo.domain, ...brandInfo.alts];
+
+    if(identityClaim && !fromDomain){
+      findings.push({
+        sev: 'med',
+        cat: 'structure',
+        key: `Could not verify sender domain for claimed brand: ${brandKey.toUpperCase()}`,
+        detail: `From display name claims association with "${brandKey.toUpperCase()}" but no usable sender domain could be extracted from the From header — treat this as unverified rather than authorized.`
+      });
+      impersonationScore += 15;
+      continue;
+    }
+
+    const senderIsAuthorized = fromDomain ? allAuthorizedDomains.some(d => rootDomain(fromDomain) === rootDomain(d)) : false;
+    const linksAreAuthorized = bodyLinkDomains.every(d =>
+      allAuthorizedDomains.some(auth => rootDomain(d) === rootDomain(auth))
+    );
+
+    if(identityClaim && senderIsAuthorized){
+      recognizedAsAuthorizedBrand = true;
+    }
+
+    if(identityClaim && !senderIsAuthorized){
+      // Strongest signal: the sender is explicitly presenting itself as this
+      // brand (display name), but the sending domain isn't one of the
+      // brand's own domains.
+      findings.push({
+        sev: 'high',
+        cat: 'spoof',
+        key: `Sender domain mismatch: ${brandKey.toUpperCase()}`,
+        detail: `Display name claims to be from "${brandKey.toUpperCase()}" (${brandInfo.domain}) but sender domain is "${fromDomain}" — classic brand impersonation. Legitimate ${brandKey.toUpperCase()} communications never originate from unaffiliated domains.`
+      });
+      impersonationScore += 40;
+
+      if(bodyLinkDomains.length > 0 && !linksAreAuthorized){
+        findings.push({
+          sev: 'high',
+          cat: 'spoof',
+          key: `Body/link mismatch: ${brandKey.toUpperCase()} impersonation`,
+          detail: `Message claims to be ${brandKey.toUpperCase()} but embedded links point to unrelated domain(s): ${bodyLinkDomains.slice(0,3).join(', ')}. Classic phishing pattern — redirect unsuspecting users to attacker infrastructure.`
+        });
+        impersonationScore += 35;
+      }
+    } else if(domainHasBrandToken && !senderIsAuthorized){
+      // No display-name claim, but the domain itself is a lookalike for the
+      // brand — equally worth a high-severity spoof finding, just worded
+      // accurately about where the signal actually came from.
+      findings.push({
+        sev: 'high',
+        cat: 'spoof',
+        key: `Lookalike sending domain: ${brandKey.toUpperCase()}`,
+        detail: `Sending domain "${fromDomain}" contains "${brandKey.toUpperCase()}" but is not one of ${brandKey.toUpperCase()}'s own domains (${brandInfo.domain}) — a classic lookalike/typosquat domain, regardless of what the display name says.`
+      });
+      impersonationScore += 35;
+
+      if(bodyLinkDomains.length > 0 && !linksAreAuthorized){
+        findings.push({
+          sev: 'high',
+          cat: 'spoof',
+          key: `Body/link mismatch: ${brandKey.toUpperCase()} impersonation`,
+          detail: `Sending domain resembles ${brandKey.toUpperCase()} but embedded links point to unrelated domain(s): ${bodyLinkDomains.slice(0,3).join(', ')}. Classic phishing pattern — redirect unsuspecting users to attacker infrastructure.`
+        });
+        impersonationScore += 35;
+      }
+    } else if(!identityClaim && (subjectMentionsBrand || bodyMentionsBrand) && fromDomain && !senderIsAuthorized){
+      // Weaker signal: brand only referenced in subject/body, not claimed as
+      // the sender identity. Worth surfacing (a legitimate NHS/bank/etc.
+      // notification would come from their own domain even if forwarded-
+      // looking) but not enough on its own to call it impersonation.
+      findings.push({
+        sev: 'low',
+        cat: 'content',
+        key: `Message references ${brandKey.toUpperCase()} but isn't sent from ${brandKey.toUpperCase()}`,
+        detail: `Subject or body mentions "${brandKey.toUpperCase()}" but the message wasn't sent from a ${brandKey.toUpperCase()}-affiliated domain (sender: ${fromDomain}). Often innocuous (a personal forward, a discussion) — only escalate if the message also asks you to click a link, log in, or share personal/payment details.`
+      });
+      impersonationScore += 5;
+    }
+  }
+
+  return { findings, score: impersonationScore, recognizedAsAuthorizedBrand };
+}
+
+// The 16-brand TRUSTED_BRANDS dictionary above only catches impersonation of
+// that specific, small list of companies. Any other impersonated authority —
+// national health/tax/benefits services, delivery couriers, "your bank",
+// generic "account security" mail, etc. — sails through with zero
+// impersonation score. This heuristic looks for authority/urgency language
+// combined with a freemail sending domain, independent of any brand name
+// list, to catch the much larger long tail of impersonation attempts.
+const CONSUMER_FREEMAIL_DOMAINS = ['gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com','protonmail.com','mail.com','icloud.com','live.com','yandex.com','gmx.com'];
+
+const AUTHORITY_LANGUAGE = /\b(NHS|HMRC|IRS|DVLA|DWP|social security|medicare|medicaid|court|summons|tax refund|tax rebate|penalty notice|benefit(s)? office|department of|ministry of|government|gov\.uk|police|customs|passport office|national insurance|pension (service|credit)|council tax|tv licen[sc]e|electoral (roll|register))\b/i;
+
+const GENERIC_SECURITY_LANGUAGE = /\b(account (suspended|locked|restricted|compromised)|verify your account|confirm your (identity|account|details)|security alert|unusual (sign[- ]?in|activity)|payment (failed|declined)|invoice (overdue|attached)|final notice|action required|your (order|parcel|delivery) (could not|failed))\b/i;
+
+function detectGenericInstitutionalImpersonation(fromRaw, fromDomain, subject){
+  const findings = [];
+  let score = 0;
+
+  const displayName = extractDisplayName(fromRaw);
+  // A bare address with no display name at all (e.g. From:
+  // hmrc-refund@gmail.com) still presents identity-claiming text to the
+  // recipient — just as the address itself rather than a separate display
+  // name — so fall back to it explicitly rather than losing the check.
+  const emailMatch = (fromRaw || '').match(/<([^>]+)>|(\S+@\S+)/);
+  const bareAddress = !displayName && emailMatch ? (emailMatch[1] || emailMatch[2] || '') : '';
+  const identityText = displayName || bareAddress;
+  const subjectText = subject || '';
+
+  const isFreemail = fromDomain && CONSUMER_FREEMAIL_DOMAINS.includes(fromDomain.toLowerCase());
+  if(!isFreemail) return { findings, score };
+
+  // Same identity-claim-vs-mention distinction as detectBrandImpersonation:
+  // the sender identity asserting an authority/security claim is a real
+  // signal; the subject line merely containing that language is common in
+  // ordinary personal mail ("Fwd: NHS appointment confirmed for mum" from a
+  // friend's own Gmail is not impersonation) and must not alone produce a
+  // HIGH severity impersonation verdict.
+  const displayAuthorityHit = AUTHORITY_LANGUAGE.test(identityText);
+  const displaySecurityHit = GENERIC_SECURITY_LANGUAGE.test(identityText);
+  const subjectAuthorityHit = AUTHORITY_LANGUAGE.test(subjectText);
+  const subjectSecurityHit = GENERIC_SECURITY_LANGUAGE.test(subjectText);
+
+  if(displayAuthorityHit){
+    findings.push({
+      sev: 'high',
+      cat: 'spoof',
+      key: 'Government/public-authority identity claimed from a freemail address',
+      detail: `Sender identity ("${identityText}") presents itself as a government, tax, health, or benefits authority, but the message is sent from a personal ${fromDomain} account. No government or NHS body sends official mail from consumer webmail — treat as impersonation regardless of what the numeric risk score below says.`
+    });
+    score += 45;
+  } else if(displaySecurityHit){
+    findings.push({
+      sev: 'high',
+      cat: 'spoof',
+      key: 'Account-security identity claimed from a freemail address',
+      detail: `Sender identity ("${identityText}") uses account-security/urgency framing typical of phishing lures, sent from a personal ${fromDomain} account rather than an organization's own domain.`
+    });
+    score += 30;
+  } else if(subjectAuthorityHit || subjectSecurityHit){
+    // Weaker signal — only the subject line, not the sender's claimed
+    // identity, references authority/security language. Surface it, don't
+    // brand it impersonation on its own.
+    findings.push({
+      sev: 'low',
+      cat: 'content',
+      key: 'Authority/security language in subject from a personal email account',
+      detail: `Subject ("${subjectText}") uses government/authority or account-security language, sent from a personal ${fromDomain} account. Often an innocuous personal forward or discussion — treat as a soft signal, not proof of impersonation, unless the sender identity or links elsewhere in this report also look wrong.`
+    });
+    score += 8;
+  }
+
+  return { findings, score };
+}
+
+// ============================================
+// SENDER LEGITIMACY CHECKS
+// ============================================
+
+// A personal name at a freemail address ("Alice Dupont <alice@gmail.com>")
+// is completely ordinary and must not, by itself, be treated the same as an
+// organization/brand name at a freemail address ("NHS Medicines Online DOZ
+// <x@hotmail.com>"). Without this distinction, the checks below flag nearly
+// all normal personal correspondence as "high severity" identity spoofing,
+// since a real human name essentially never substring-matches a freemail
+// domain like "gmail" or "hotmail" either.
+const ORG_DISPLAY_KEYWORDS = /\b(team|support|service|services|notice|alert|alerts|security|bank|dept|department|admin|official|verification|verify|ltd|inc|llc|plc|group|online|notification|notifications|billing|accounts?|helpdesk|customer|care|desk|centre|center|office|agency|authority|hmrc|nhs|dvla|dwp|irs|gov|government|delivery|shipping|rewards|prize|winner)\b/i;
+
+function looksOrganizational(displayName){
+  if(!displayName) return false;
+  if(ORG_DISPLAY_KEYWORDS.test(displayName)) return true;
+  const words = displayName.trim().split(/\s+/).filter(Boolean);
+  const looksLikeHumanName = words.length >= 2 && words.length <= 3 &&
+    words.every(w => /^[A-Z][a-zA-Z'-]*$/.test(w) && !/^[A-Z]+$/.test(w));
+  return !looksLikeHumanName;
+}
+
+function detectGenericSender(fromRaw){
+  const findings = [];
+  let score = 0;
+  
+  if(!fromRaw) return { findings, score };
+  
+  // Extract email address
+  const emailMatch = fromRaw.match(/<([^>]+)>/);
+  const email = emailMatch ? emailMatch[1] : fromRaw;
+  const [localPart, domain] = email.split('@');
+  
+  // Check for generic/trivial local parts
+  const genericPatterns = /^(noreply|no-?reply|donotreply|mailer|postmaster|admin|support|notification|alert|system|robot|bot|noreplybot|random|test|user|customer|account|verify|confirm|webmaster|info|team|group|list|newsletter|news|updates|promo|marketing|sales|contact|feedback|help|billing)/i;
+  
+  if(genericPatterns.test(localPart)){
+    findings.push({
+      sev: 'med',
+      cat: 'identity',
+      key: 'Generic/trivial sender address',
+      detail: `Sender local part is generic or system-like ("${localPart}") — may be legitimate automation but combined with other indicators can signal spoofing. Real organizations typically send customer-facing mail from named personnel or service accounts.`
+    });
+    score += 12;
+  }
+  
+  // Check for disposable/consumer email for business context
+  const consumerDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'protonmail.com', 'mail.com'];
+  if(consumerDomains.includes(domain)){
+    const displayName = extractDisplayName(fromRaw);
+    if(looksOrganizational(displayName)){
+      // The display name presents an organization/brand/authority identity
+      // while sending from a personal webmail account — this is the actual
+      // red flag the finding name describes.
+      findings.push({
+        sev: 'high',
+        cat: 'identity',
+        key: 'Consumer email for institutional claim',
+        detail: `Display name ("${displayName}") presents an organizational/institutional identity but sender uses a consumer email account (${domain}). Legitimate institutions, government agencies, and major services never send official communications from personal email accounts.`
+      });
+      score += 30;
+    } else {
+      // A plain personal name at a freemail address is normal, not a red
+      // flag — surface it as background info only.
+      findings.push({
+        sev: 'info',
+        cat: 'identity',
+        key: 'Personal webmail sender',
+        detail: `Sender uses a consumer email account (${domain}). Ordinary for personal correspondence — only relevant if combined with an institutional/brand identity claim elsewhere in this report.`
+      });
+    }
+  }
+
+  return { findings, score };
+}
+
+// ============================================
+// DISPLAY NAME / DOMAIN ALIGNMENT
+// ============================================
+
+function detectDisplayNameMismatch(fromRaw, fromDomain){
+  const findings = [];
+  let score = 0;
+  
+  if(!fromRaw) return { findings, score };
+
+  const displayName = extractDisplayName(fromRaw);
+
+  if(!displayName) return { findings, score };
+
+  // A plain personal name will essentially never substring-match a domain
+  // name (freemail or otherwise) — that's expected, not a spoofing signal.
+  // This check is only meaningful when the display name is presenting an
+  // organizational/brand identity.
+  if(!looksOrganizational(displayName)) return { findings, score };
+
+  // Extract company/brand name from display
+  const DISPLAY_STOPWORDS = new Set(['the','a','an','of','and','online','services','service','ltd','llc','inc','corp','co','group','team','support','notification','notifications','no-reply','noreply','mail','email','dept','department']);
+  const displayWords = displayName.toLowerCase().split(/[\s\-_\.]/).filter(w => w && !DISPLAY_STOPWORDS.has(w));
+  // The FULL domain, not just its first label. Confirmed live: "Experian"
+  // <email@notify.experian.co.uk> was flagged as misaligned because this used
+  // to compare against fromDomain.split('.')[0] === "notify" only, discarding
+  // "experian" — the organization's actual name — entirely. ESP-style sending
+  // domains routinely put a generic prefix (notify./info./mail./e.) ahead of
+  // the real organization label, so checking only the first label misses
+  // exactly the common case it needs to handle.
+  const fullDomain = fromDomain.toLowerCase();
+
+  // Check if display name refers to a different organization than domain.
+  // Previously any word shorter than 3 characters (e.g. "NHS", "US", "UK",
+  // "AT" in "AT&T") was treated as an automatic match, which meant a lot of
+  // short brand names bypassed this check entirely regardless of the actual
+  // sending domain. Now only genuine filler stopwords are ignored, and a
+  // short word must still substring-match the domain to count as aligned.
+  const displayHasNoMatch = displayWords.length > 0 && !displayWords.some(w => fullDomain.includes(w));
+  
+  if(displayHasNoMatch && displayName.length > 5){
+    findings.push({
+      sev: 'high',
+      cat: 'identity',
+      key: 'Display name / domain misalignment',
+      detail: `Display name ("${displayName}") has no relation to sending domain ("${fromDomain}"). Attacker-controlled: legitimate mail servers align display name with sender domain.`
+    });
+    score += 25;
+  }
+  
+  return { findings, score };
+}
+
+// ============================================
+// CONTENT OBFUSCATION DETECTION
+// ============================================
+
+function detectContentFragmentation(bodyText){
+  const findings = [];
+  let score = 0;
+  
+  if(!bodyText || bodyText.trim().length < 50) return { findings, score };
+  
+  // Look for repeating blocks of text
+  const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 30);
+  const lineCounts = {};
+  lines.forEach(l => { lineCounts[l] = (lineCounts[l] || 0) + 1; });
+  const duplicates = Object.values(lineCounts).filter(c => c >= 3).length;
+  
+  if(duplicates > 0){
+    findings.push({
+      sev: 'med',
+      cat: 'content',
+      key: 'Excessive text repetition',
+      detail: `Same blocks of text repeat ${duplicates} or more times. Classic spam obfuscation technique used to dilute filter keywords and bypass content-scanning security systems.`
+    });
+    score += 25;
+  }
+  
+  // Detect unrelated topics in single message (e.g. banking + pharmacy + real estate).
+  // Every keyword is \b-wrapped — confirmed live: the unbounded "lease" matched
+  // inside the ordinary word "please" ("...please notify us...") in a genuine
+  // Experian credit-report email, contributing a false high-severity finding.
+  // "account", "order", "shop", "store", and bare "health" were also dropped:
+  // each is common enough in completely unrelated everyday correspondence
+  // (any "your account", "in order to...", "app store") that even word-bounded
+  // it's too weak a signal for "this message is topic-stuffed spam."
+  const topics = {
+    healthcare: /\b(pharmacy|prescription|medication|nhs|doctor|patient|clinic)\b/i,
+    finance: /\b(bank|credit card|payment|transfer|invoice|mortgage)\b/i,
+    logistics: /\b(shipment|delivery|tracking|parcel|package|fedex|ups|dhl|shipping)\b/i,
+    realestate: /\b(property|real estate|listing|apartment|rent|lease|calle|cartagena|murcia)\b/i,
+    retail: /\b(amazon|purchase|discount|coupon|sale)\b/i
+  };
+  
+  let topicCount = 0;
+  for(const [_, regex] of Object.entries(topics)){
+    if(regex.test(bodyText)) topicCount++;
+  }
+  
+  if(topicCount >= 3){
+    findings.push({
+      sev: 'high',
+      cat: 'content',
+      key: 'Unrelated topics in single message',
+      detail: `Email mixes ${topicCount}+ unrelated business verticals (healthcare, finance, logistics, real estate, retail, etc). Phishing/spam emails bulk-stuff unrelated content to confuse filters and humans alike.`
+    });
+    score += 30;
+  }
+  
+  return { findings, score };
+}
+
+// ============================================
+// SUSPICIOUS LINK PATTERNS
+// ============================================
+
+function detectSuspiciousLinks(bodyText, fromDomain, bodyLinkDomains){
+  const findings = [];
+  let score = 0;
+  
+  if(!bodyText || bodyLinkDomains.length === 0) return { findings, score };
+  
+  // Redirect/tracker services (especially paired with brand impersonation)
+  const trackerDomains = ['eblink', 'click', 'redirect', 'track', 'link', 'url-track', 'go.', 'mail-'];
+  const hasTracker = bodyLinkDomains.some(d => trackerDomains.some(t => d.includes(t)));
+  
+  if(hasTracker && bodyLinkDomains.some(d => !d.includes(rootDomain(fromDomain)))){
+    findings.push({
+      sev: 'med',
+      cat: 'spam',
+      key: 'Third-party click tracker + external domain',
+      detail: `Message contains redirect/tracker links (${bodyLinkDomains.filter(d => trackerDomains.some(t => d.includes(t))).join(', ')}) pointing to unrelated domain(s). Typical of phishing: real company links are direct, not bounced through trackers.`
+    });
+    score += 20;
+  }
+  
+  // Obfuscated/encoded URLs
+  const obfuscatedUrlCount = (bodyText.match(/[a-z0-9]{16,}\/\?/gi) || []).length;
+  if(obfuscatedUrlCount > 0){
+    findings.push({
+      sev: 'med',
+      cat: 'spam',
+      key: 'Obfuscated/encoded URLs',
+      detail: `Message contains ${obfuscatedUrlCount} heavily encoded or obfuscated URL(s). Phishing emails obfuscate links to hide true destination from security tools and human inspection.`
+    });
+    score += 15;
+  }
+  
+  return { findings, score };
+}
+
+// A List-Unsubscribe URL pointing to a domain with no relation to the sender
+// is easy to miss — confirmed live: a scam email's List-Unsubscribe pointed
+// to accounts.snapchat.com (utterly unrelated to the outlook.com sender or
+// content), and the tool's only existing reaction to List-Unsubscribe being
+// PRESENT was a reassuring "consistent with compliant bulk mail" note. Kept
+// deliberately LOW severity and cautiously worded: plenty of legitimate mail
+// is relayed through a third-party ESP whose unsubscribe domain doesn't match
+// the sender's own (this tool already hit that exact false-positive shape
+// twice this session with click-tracking domains) — this is a nudge to check
+// manually, not a verdict.
+function detectUnsubscribeMismatch(listUnsubValue, fromDomain){
+  const findings = [];
+  let score = 0;
+  if(!listUnsubValue || !fromDomain) return { findings, score };
+
+  const urls = extractUrls(listUnsubValue);
+  if(!urls.length) return { findings, score };
+
+  const unsubDomain = urlDomain(urls[0]);
+  if(!unsubDomain) return { findings, score };
+
+  if(rootDomain(unsubDomain) !== rootDomain(fromDomain)){
+    findings.push({
+      sev: 'low',
+      cat: 'spam',
+      key: 'Unsubscribe link domain unrelated to sender',
+      detail: `List-Unsubscribe points to "${unsubDomain}", unrelated to the sending domain ("${fromDomain}"). Often explained by a third-party email service provider handling unsubscribes on the sender's behalf — but also seen when a spam template's unsubscribe link is copy-pasted from an unrelated site. Worth a quick manual check before trusting it.`
+    });
+    score += 8;
+  }
+
+  return { findings, score };
+}
+
+// ============================================
+// HIDDEN / CLOAKED CONTENT (preheader stuffing)
+// ============================================
+
+// Marketing/phishing templates routinely hide large blocks of filler text —
+// often duplicated legitimate-looking content — using CSS that keeps it out
+// of the rendered view while still being scanned by mail-preview generators.
+// This is a well-known spam-filter-evasion and inbox-preview-manipulation
+// technique. It looks for near-zero-size or hidden containers.
+function detectHiddenContent(bodyText){
+  const findings = [];
+  let score = 0;
+
+  if(!bodyText) return { findings, score };
+
+  const patterns = [
+    /max-height\s*:\s*0/i,
+    /(?:^|[^-])height\s*:\s*0(?:px)?\b/i,
+    /width\s*:\s*0(?:px)?\b/i,
+    /display\s*:\s*none/i,
+    /visibility\s*:\s*hidden/i,
+    /opacity\s*:\s*0\b/i,
+    /font-size\s*:\s*0/i,
+    /transform\s*:\s*scale\(\s*0/i
+  ];
+
+  const hiddenStyleHits = patterns.filter(p => p.test(bodyText)).length;
+  const overflowHidden = /overflow\s*:\s*hidden/i.test(bodyText);
+
+  if(hiddenStyleHits >= 1 && overflowHidden){
+    findings.push({
+      sev: 'med',
+      cat: 'content',
+      key: 'Hidden/zero-size content block detected',
+      detail: `Message HTML contains ${hiddenStyleHits} CSS pattern(s) that collapse content to zero size combined with overflow:hidden — a common technique for stuffing invisible filler text (often duplicated real-looking content) to manipulate inbox preview text and evade spam-content filters. Legitimate transactional/marketing mail rarely needs to hide content from the reader.`
+    });
+    score += 20;
+  } else if(hiddenStyleHits >= 2){
+    findings.push({
+      sev: 'low',
+      cat: 'content',
+      key: 'Zero-size styling present in message body',
+      detail: `Message HTML sets ${hiddenStyleHits} elements to zero size/opacity. Can be legitimate layout code, but is also used to hide content from the visible message while still being present in the source.`
+    });
+    score += 8;
+  }
+
+  // The patterns above all require a literal "0" — a container sized to
+  // 1-2px in BOTH dimensions is just as visually imperceptible but dodges
+  // every one of them; confirmed live against a scam email using
+  // <section style="width:1px;height:1px;"> to wrap padding content.
+  // Restricted to container-capable tags (div/section/span/td/p) — an <img>
+  // at 1x1 is an ordinary, benign open-tracking pixel with nothing nested
+  // inside it to hide, and must not trip this.
+  const tinyContainerTags = bodyText.match(/<(div|section|span|td|p)\b[^>]*style\s*=\s*"[^"]*"[^>]*>/gi) || [];
+  const hasTinyHiddenContainer = tinyContainerTags.some(tag => {
+    const styleMatch = tag.match(/style\s*=\s*"([^"]*)"/i);
+    if(!styleMatch) return false;
+    const w = styleMatch[1].match(/width\s*:\s*(\d+)px/i);
+    const h = styleMatch[1].match(/height\s*:\s*(\d+)px/i);
+    return !!(w && h && parseInt(w[1], 10) <= 2 && parseInt(h[1], 10) <= 2);
+  });
+  if(hasTinyHiddenContainer){
+    findings.push({
+      sev: 'med',
+      cat: 'content',
+      key: 'Near-zero-size hidden container detected',
+      detail: `Message HTML contains a container element sized to 1-2px in both width and height — visually imperceptible but not literally "0", evading simple zero-size checks while still being able to hide arbitrary content from the reader.`
+    });
+    score += 20;
+  }
+
+  return { findings, score };
+}
+
+// ============================================
+// DATE/TIMESTAMP ANOMALIES
+// ============================================
+
+function detectDateAnomalies(headerDate, receivedDates){
+  const findings = [];
+  let score = 0;
+  
+  if(!headerDate) return { findings, score };
+  
+  // Check for future dates or impossible dates
+  const dateRegex = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s+(\d{4})/i;
+  const match = headerDate.match(dateRegex);
+  
+  if(match){
+    const year = parseInt(match[2]);
+    const currentYear = new Date().getFullYear(); // was hardcoded to 2026 — would silently go stale every year
+    if(year > currentYear + 1 || year < currentYear - 10){
+      findings.push({
+        sev: 'med',
+        cat: 'structure',
+        key: 'Impossible or suspicious date',
+        detail: `Email date header shows year ${year}, which is improbable. Can indicate header tampering or misconfigured mail server.`
+      });
+      score += 10;
+    }
+  }
+  
+  return { findings, score };
+}
+
+// ============================================
+// PUNYCODE / IDN HOMOGRAPH DETECTION
+// ============================================
+
+// Domains encoding non-ASCII characters (xn--...) render as lookalike
+// characters in most mail/browser UIs — a well-known technique for
+// registering visually-confusable domains (e.g. a Cyrillic "а" standing in
+// for a Latin "a") that pass every literal-string domain check in this tool
+// because rootDomain() only ever does exact string comparison.
+function detectPunycodeDomains(fromDomain, bodyLinkDomains){
+  const findings = [];
+  let score = 0;
+  const suspects = [fromDomain, ...(bodyLinkDomains || [])].filter(d => d && /xn--/i.test(d));
+  const unique = [...new Set(suspects)];
+  if(unique.length > 0){
+    findings.push({
+      sev: 'med',
+      cat: 'spoof',
+      key: 'Punycode/internationalized domain in sender or links',
+      detail: `Domain(s) use punycode encoding (${unique.join(', ')}) — this renders as non-ASCII characters in most clients and is a common technique for visually-confusable lookalike domains (homograph attacks). Not proof of malice on its own, but verify the rendered domain carefully before trusting it.`
+    });
+    score += 20;
+  }
+  return { findings, score };
+}
+
+// ============================================
+// MIXED-SCRIPT / HOMOGLYPH DISPLAY NAME DETECTION
+// ============================================
+
+// Punycode detection (above) only catches domains that were IDN-encoded.
+// Display names are never punycode-encoded — a phisher can paste a literal
+// Unicode look-alike straight into the From display name, e.g. "PаyPal
+// Security" where the "a" is Cyrillic U+0430, not Latin U+0061. Rendered in
+// most UIs it's visually indistinguishable from "PayPal Security" but never
+// string-matches any TRUSTED_BRANDS regex. This looks for a single word that
+// mixes Latin letters with letters from another alphabet — a genuine non-
+// Latin name is entirely one script or the other; script-mixing mid-word is
+// specifically what a homoglyph substitution produces.
+const SCRIPT_REGEXES = {
+  Latin: /\p{Script=Latin}/u,
+  Cyrillic: /\p{Script=Cyrillic}/u,
+  Greek: /\p{Script=Greek}/u,
+  Armenian: /\p{Script=Armenian}/u
+};
+
+function detectMixedScriptIdentity(displayName){
+  const findings = [];
+  let score = 0;
+  if(!displayName) return { findings, score };
+
+  const words = displayName.split(/\s+/).filter(Boolean);
+  for(const word of words){
+    const scriptsPresent = Object.keys(SCRIPT_REGEXES).filter(name => SCRIPT_REGEXES[name].test(word));
+    if(scriptsPresent.length >= 2){
+      findings.push({
+        sev: 'high',
+        cat: 'spoof',
+        key: 'Mixed-script (homoglyph) display name',
+        detail: `Display name token "${word}" mixes ${scriptsPresent.join('/')} characters within a single word — a common technique for visually-confusable lookalike names (e.g. a Cyrillic "Р" standing in for a Latin "P"). Legitimate names essentially never mix scripts mid-word.`
+      });
+      score += 30;
+      break; // one clear hit is enough signal; avoid a finding per mixed word
+    }
+  }
+  return { findings, score };
+}
+
+// ============================================
+// MAIN ANALYSIS FUNCTION
+// ============================================
+
+function analyze(){
+  const raw = document.getElementById('input').value.trim();
+  if(!raw){
+    alert('Paste email headers into the textarea first.');
+    return;
+  }
+
+  const result = document.getElementById('result');
+  result.style.display = 'block';
+  result.innerHTML = '<div class="empty-note">Analyzing...</div>';
+  
+  setTimeout(() => { doAnalyze(raw); }, 50);
+}
+
+// Pure analysis: takes the raw pasted text (and optional custom-brands config
+// text) and returns every value the report needs, without touching the DOM.
+// Kept separate from rendering specifically so both the real UI (doAnalyze,
+// below) and the self-test harness (further down) can call the same code
+// path and assert on the returned data / rendered HTML directly, instead of
+// only being checkable by hand-pasting samples into the page.
+function analyzeHeaders(rawInput, customBrandsText){
+  const findings = [];
+  let score = 0;           // Risk score
+  let spamScore = 0;       // Spam/bulk-mail score
+  let impersonationScore = 0; // Brand impersonation score
+  let identityScore = 0;   // Sender identity legitimacy score
+
+  // ---- UNFOLD HEADERS (RFC 5322 line-folding) ----
+  // A header value may wrap onto a following line that starts with whitespace
+  // (e.g. "From: Display Name\n  <addr@domain.com>"). Every header regex below
+  // assumes single-line values, so unfold the header block *before* parsing —
+  // otherwise multi-line From/Subject/Reply-To/etc. headers silently lose the
+  // part of the value that wrapped, which breaks address/domain extraction.
+  const raw = unfoldHeaderBlock(rawInput);
+
+  // ---- EXTRACT HEADERS ----
+  // From/Subject/Reply-To/List-ID are decoded for RFC 2047 encoded-words
+  // (=?charset?B/Q?...?=) — otherwise a base64/quoted-printable-encoded
+  // brand name or authority phrase never matches any of the checks below.
+  const fromMatch = raw.match(/^From:\s*(.+?)(?:\r?\n(?:\s+.+)?)*(?:\r?\n|$)/m);
+  const fromRaw = fromMatch ? decodeMimeWords(fromMatch[1].trim()) : '';
+  const fromEmailMatch = fromRaw.match(/<([^>]+)>|(\S+@\S+)/);
+  const fromEmail = fromEmailMatch ? (fromEmailMatch[1] || fromEmailMatch[2]) : '';
+  const fromDomain = fromEmail.split('@')[1] || '';
+
+  const returnPathMatch = raw.match(/^Return-Path:\s*<(.+?)>/m);
+  const returnPath = returnPathMatch ? returnPathMatch[1] : '';
+
+  const replyToMatch = raw.match(/^Reply-To:\s*(.+?)(?:\r?\n(?:\s+.+)?)*(?:\r?\n|$)/m);
+  const replyTo = replyToMatch ? decodeMimeWords(replyToMatch[1].trim()) : '';
+
+  const subjectMatch = raw.match(/^Subject:\s*(.+?)(?:\r?\n(?:\s+.+)?)*(?:\r?\n|$)/m);
+  const subject = subjectMatch ? decodeMimeWords(subjectMatch[1].trim()) : '';
+
+  const messageIdMatch = raw.match(/^Message-ID:\s*<(.+?)>/m);
+  const messageId = messageIdMatch ? messageIdMatch[1] : '';
+
+  const spfMatch = raw.match(/^(?:Received-SPF|X-.*?-SPF):\s*(\w+)/im);
+  const spf = spfMatch ? spfMatch[1].toLowerCase() : null;
+
+  const dkimMatch = raw.match(/^DKIM-Signature:[\s\S]*?b=/im);
+  let dkim = null;
+  if(dkimMatch){
+    const authResMatch = raw.match(/^Authentication-Results:[\s\S]*?dkim=(\w+)/im);
+    dkim = authResMatch ? authResMatch[1].toLowerCase() : 'present';
+  }
+
+  const dmarcMatch = raw.match(/^(?:Authentication-Results|X-.*?-DMARC):\s*[\s\S]*?dmarc=(\w+)/im);
+  const dmarc = dmarcMatch ? dmarcMatch[1].toLowerCase() : null;
+
+  const listUnsubMatch = raw.match(/^List-Unsubscribe:\s*(.+?)(?:\r?\n(?:\s+.+)?)*(?:\r?\n|$)/m);
+  const listUnsubValue = listUnsubMatch ? listUnsubMatch[1].trim() : '';
+  const listUnsub = !!listUnsubValue;
+
+  const precedenceMatch = raw.match(/^Precedence:\s*(\w+)/im);
+  const precedence = precedenceMatch ? precedenceMatch[1] : '';
+
+  const listIdMatch = raw.match(/^List-ID:\s*(.+?)(?:\r?\n(?:\s+.+)?)*(?:\r?\n|$)/m);
+  const listId = listIdMatch ? decodeMimeWords(listIdMatch[1]) : '';
+
+  const receivedAll = raw.match(/^Received:/gm) || [];
+  const dateMatch = raw.match(/^Date:\s*(.+?)(?:\r?\n(?:\s+.+)?)*\r?\n/m);
+  const headerDate = dateMatch ? dateMatch[1] : '';
+
+  // ---- EXTRACT BODY ----
+  // bodyText keeps tags/markup intact (needed for link hrefs and cloaking
+  // CSS); plainBodyText strips markup for keyword/topic/duplication checks,
+  // which are far less reliable when running against raw tag soup.
+  let bodyText = '';
+  try{ bodyText = extractBodyText(raw); }catch(e){ bodyText = ''; }
+  let plainBodyText = '';
+  try{ plainBodyText = stripHtmlToText(bodyText); }catch(e){ plainBodyText = bodyText; }
+  let bodyLinkDomains = [];
+
+  if(bodyText && bodyText.trim().length > 15){
+    const urls = extractBodyLinkUrls(bodyText);
+    bodyLinkDomains = [...new Set(urls.map(urlDomain).filter(Boolean))];
+  }
+
+  // ---- AUTHENTICATION CHECKS ----
+  if(spf === 'pass') score -= 8;
+  else if(spf === 'fail') {
+    findings.push({sev:'high',cat:'auth',key:'SPF failure',detail:'SPF check failed — sender IP not authorized to send from claimed domain.'});
+    score += 30;
+  } else if(spf === 'softfail'){
+    // A "~all" policy result: weaker than an outright fail, but still a real
+    // signal that the sending IP isn't clearly authorized — previously
+    // silently ignored (only exact 'pass'/'fail' were scored at all).
+    findings.push({sev:'med',cat:'auth',key:'SPF softfail',detail:'SPF check returned softfail (~all) — sending IP is not clearly authorized for this domain. Weaker than an outright failure, but still worth treating as suspicious.'});
+    score += 15;
+  }
+
+  if(dkim === 'pass') score -= 5;
+  else if(dkim === 'fail'){
+    findings.push({sev:'high',cat:'auth',key:'DKIM signature invalid',detail:'DKIM signature present but failed validation — possible header tampering or replay attack.'});
+    score += 25;
+  }
+
+  if(dmarc === 'pass') score -= 8;
+  else if(dmarc === 'fail'){
+    findings.push({sev:'high',cat:'auth',key:'DMARC policy failure',detail:'DMARC check failed — sender domain policy rejects this message.'});
+    score += 35;
+  } else if(dmarc === 'quarantine'){
+    findings.push({sev:'med',cat:'auth',key:'DMARC quarantine',detail:'Sender domain policy requests quarantine — likely misalignment between From domain and sending infrastructure.'});
+    score += 12;
+  }
+
+  // ---- BRAND IMPERSONATION ----
+  // Confirmation that custom brand config actually took effect on THIS
+  // analysis, surfaced in the report itself — not just as you type, but as a
+  // record of what was actually in play for this specific result.
+  const customBrandsApplied = describeCustomBrands(customBrandsText).validKeys;
+  const brands = Object.assign({}, TRUSTED_BRANDS, parseCustomBrands(customBrandsText));
+  const { findings: impersonFindings, score: impersonScore, recognizedAsAuthorizedBrand } = detectBrandImpersonation(fromRaw, fromDomain, plainBodyText, bodyLinkDomains, subject, brands);
+  findings.push(...impersonFindings);
+  impersonationScore += impersonScore;
+  // Confirmed brand impersonation is itself direct evidence the claimed
+  // sender identity is fake — it belongs on the identity axis too, not only
+  // the impersonation axis. Without this, a message can carry a high-
+  // severity "Sender domain mismatch" finding and still show "Sender
+  // Identity: LEGITIMATE", because the display-name/domain alignment check
+  // below is fooled by the exact thing that makes this phishing: the
+  // attacker put the brand name in BOTH the display name and the lookalike
+  // domain on purpose, which that check reads as "they match" rather than
+  // as the impersonation it actually is.
+  identityScore += impersonScore;
+  score += impersonScore * 0.8; // Weight for main risk score
+
+  // ---- GENERIC INSTITUTIONAL IMPERSONATION (beyond the fixed brand list) ----
+  const { findings: genericImpersonFindings, score: genericImpersonScore } = detectGenericInstitutionalImpersonation(fromRaw, fromDomain, subject);
+  findings.push(...genericImpersonFindings);
+  impersonationScore += genericImpersonScore;
+  identityScore += genericImpersonScore; // same reasoning as above
+  score += genericImpersonScore * 0.8;
+
+  // ---- SENDER LEGITIMACY ----
+  const { findings: identityFindings, score: idScore } = detectGenericSender(fromRaw);
+  findings.push(...identityFindings);
+  identityScore += idScore;
+  score += idScore * 0.7;
+
+  // Skip the generic substring-based alignment check when the curated brand
+  // list already actively confirmed this display name is authorized for
+  // this exact domain — that check has no concept of institutional domain
+  // patterns (e.g. UK gov's "*.service.gov.uk") and would otherwise
+  // contradict a match the brand list already vouches for.
+  const { findings: displayFindings, score: displayScore } = recognizedAsAuthorizedBrand
+    ? { findings: [], score: 0 }
+    : detectDisplayNameMismatch(fromRaw, fromDomain);
+  findings.push(...displayFindings);
+  identityScore += displayScore;
+  score += displayScore * 0.8;
+
+  // ---- MIXED-SCRIPT / HOMOGLYPH DISPLAY NAME ----
+  const { findings: mixedScriptFindings, score: mixedScriptScore } = detectMixedScriptIdentity(extractDisplayName(fromRaw));
+  findings.push(...mixedScriptFindings);
+  identityScore += mixedScriptScore;
+  score += mixedScriptScore * 0.8;
+
+  // ---- CONTENT OBFUSCATION ----
+  const { findings: contentFindings, score: contentScore } = detectContentFragmentation(plainBodyText);
+  findings.push(...contentFindings);
+  spamScore += contentScore;
+  score += contentScore * 0.75;
+
+  // ---- HIDDEN / CLOAKED CONTENT ----
+  const { findings: hiddenFindings, score: hiddenScore } = detectHiddenContent(bodyText);
+  findings.push(...hiddenFindings);
+  spamScore += hiddenScore;
+  score += hiddenScore * 0.7;
+
+  // ---- SUSPICIOUS LINKS ----
+  const { findings: linkFindings, score: linkScore } = detectSuspiciousLinks(bodyText, fromDomain, bodyLinkDomains);
+  findings.push(...linkFindings);
+  spamScore += linkScore;
+  score += linkScore * 0.7;
+
+  // ---- DATE ANOMALIES ----
+  const { findings: dateFindings, score: dateScore } = detectDateAnomalies(headerDate, receivedAll);
+  findings.push(...dateFindings);
+  score += dateScore * 0.6;
+
+  // ---- PUNYCODE / IDN HOMOGRAPH ----
+  const { findings: punycodeFindings, score: punycodeScore } = detectPunycodeDomains(fromDomain, bodyLinkDomains);
+  findings.push(...punycodeFindings);
+  spamScore += punycodeScore;
+  score += punycodeScore * 0.7;
+
+  // ---- LEGACY SPAM CHECKS ----
+  if(listUnsub){
+    findings.push({sev:'low',cat:'spam',key:'Unsubscribe mechanism',detail:'List-Unsubscribe header present — consistent with compliant bulk mail rather than outright scam.'});
+    // A present List-Unsubscribe header isn't automatically reassuring if the
+    // link itself points somewhere with no connection to the sender at all.
+    const { findings: unsubFindings, score: unsubScore } = detectUnsubscribeMismatch(listUnsubValue, fromDomain);
+    findings.push(...unsubFindings);
+    spamScore += unsubScore;
+    score += unsubScore * 0.6;
+  } else if(precedence && /bulk|list/i.test(precedence)){
+    findings.push({sev:'med',cat:'spam',key:'Missing opt-out',detail:'Message marked as bulk but lacks List-Unsubscribe header — non-compliant with CAN-SPAM/GDPR norms.'});
+    spamScore += 15;
+  }
+
+  if(subject){
+    const spamWords = /(\bfree\b|winner|congratulations|act now|risk[- ]free|guarantee|no obligation|lowest price|work from home|click here|\$\$\$|100% free|no cost|cash prize|lottery|casino|crypto giveaway|double your|limited time offer)/i;
+    if(spamWords.test(subject)){
+      findings.push({sev:'med',cat:'spam',key:'Subject trigger words',detail:'Subject contains classic spam/promotional phrasing.'});
+      spamScore += 15;
+    }
+  }
+
+  // ---- CAPS/EXCLAMATION CHECK ----
+  if(subject){
+    const lettersOnly = subject.replace(/[^A-Za-z]/g,'');
+    const capsOnly = subject.replace(/[^A-Z]/g,'');
+    if(lettersOnly.length > 6 && (capsOnly.length / lettersOnly.length) > 0.6){
+      findings.push({sev:'low',cat:'spam',key:'EXCESSIVE UPPERCASE',detail:'Subject is mostly uppercase — promotional/spam styling.'});
+      spamScore += 8;
+    }
+    if((subject.match(/!/g)||[]).length >= 2){
+      findings.push({sev:'low',cat:'spam',key:'Multiple exclamation marks',detail:'Multiple ! marks in subject — common spam/promotional pattern.'});
+      spamScore += 5;
+    }
+  }
+
+  // ---- NORMALIZE SCORES ----
+  // score alone accumulates fractional weights (impersonScore * 0.8, idScore
+  // * 0.7, etc.) — the others only ever add whole numbers, so only this one
+  // needs rounding. Confirmed live: an unrounded score rendered as
+  // "15.399999999999999" in the gauge, long enough to visually collide with
+  // the verdict text next to it.
+  score = Math.round(Math.max(0, Math.min(100, score)));
+  spamScore = Math.max(0, Math.min(100, spamScore));
+  impersonationScore = Math.max(0, Math.min(100, impersonationScore));
+  identityScore = Math.max(0, Math.min(100, identityScore));
+
+  // ---- DETERMINE VERDICTS ----
+  const VERDICTS = {
+    'v-low':  { label: 'LOW RISK',      desc: 'Checks are broadly consistent with a legitimate sender. No strong indicators of spoofing.' },
+    'v-med':  { label: 'ELEVATED RISK', desc: 'One or more inconsistencies detected. Could be legitimate (third-party ESP, forwarding) but warrants manual verification.' },
+    'v-high': { label: 'HIGH RISK',     desc: 'Multiple strong spoofing indicators detected. Treat as malicious unless independently verified through a separate channel.' }
+  };
+  const VERDICT_RANK = { 'v-low': 0, 'v-med': 1, 'v-high': 2 };
+
+  let vClass;
+  if(score < 25) vClass = 'v-low';
+  else if(score < 55) vClass = 'v-med';
+  else vClass = 'v-high';
+
+  // ---- SEVERITY FLOOR ----
+  // The numeric score is a weighted sum, and negative "auth passed" credits
+  // can offset positive findings — e.g. a message can have a clear-cut,
+  // high-severity spoofing/impersonation finding and still net out under 25
+  // once the SPF/DKIM/DMARC-pass discount is subtracted (this is exactly
+  // what happened with the NHS/hotmail sample this tool was built to catch:
+  // impersonationScore hit the banner threshold while the numeric verdict
+  // still read LOW RISK). A message that is authenticated is not the same
+  // as a message that is safe — a legitimate account can send phishing, and
+  // passing auth should never be able to fully cancel out a hard spoofing
+  // signal. This floor makes that structurally impossible instead of
+  // relying on score-weighting alone to keep landing in the right bucket.
+  // The same reasoning applies across axes, not just to impersonation: a
+  // message with no named brand to spoof and a real (if throwaway) sending
+  // account can still legitimately authenticate while being blatant scam
+  // content — confirmed live, a scam padded with a repeated fake quote-chain
+  // and a hijacked unsubscribe link authenticated cleanly and drove spamScore
+  // to 53 (HIGH), yet the numeric verdict still read LOW RISK with a HIGH
+  // spam banner rendered directly above it. spamScore thresholds mirror the
+  // spamLabel HIGH/MEDIUM cutoffs below for consistency between the banner
+  // and the headline verdict.
+  const highSpoofCount = findings.filter(f => f.sev === 'high' && (f.cat === 'spoof' || f.cat === 'identity' || f.cat === 'auth')).length;
+  let floorClass = null;
+  if(highSpoofCount >= 2 || impersonationScore >= 60 || spamScore >= 80) floorClass = 'v-high';
+  else if(highSpoofCount >= 1 || impersonationScore >= 40 || spamScore >= 50) floorClass = 'v-med';
+
+  if(floorClass && VERDICT_RANK[floorClass] > VERDICT_RANK[vClass]){
+    vClass = floorClass;
+  }
+
+  const vLabel = VERDICTS[vClass].label;
+  const vDesc = VERDICTS[vClass].desc;
+
+  // ---- SPAM (BULK/PROMOTIONAL) vs. PHISHING (DECEPTION) ----
+  // These are different questions, and hasDeceptionEvidence (same definition
+  // as the severity floor above) is still tracked and still changes the
+  // WORDING below — a message that also shows impersonation/authentication
+  // evidence gets called out more specifically than one that doesn't.
+  //
+  // What it deliberately no longer does is let "no deception evidence found"
+  // become a conclusion of safety. It used to: a high bulk-mail score with no
+  // matching impersonation finding was framed as "reads as legitimate
+  // marketing, not phishing." That is only true for the failure mode this was
+  // built to fix (a fully-authenticated Experian marketing email getting
+  // branded "phishing" for using ordinary ESP tracking links). It is false
+  // for the failure mode found right after: a throwaway-account scam (fake
+  // embassy visa lure + foreign-language pharma spam, hijacked unsubscribe
+  // link, padded quote-chain) that impersonates no brand this tool knows by
+  // name and uses no English trigger phrases — it produced ZERO deception
+  // evidence by this tool's own definition while being an actual scam. This
+  // tool's brand/language coverage is inherently incomplete, so "we found no
+  // evidence of deception" must never be read as "we confirmed there is
+  // none." Every tier below now stays cautionary regardless of
+  // hasDeceptionEvidence; only the specificity of the wording changes.
+  const hasDeceptionEvidence = highSpoofCount > 0 || impersonationScore >= 40;
+  const authFullyPasses = spf === 'pass' && dkim === 'pass' && dmarc === 'pass';
+  const authCaveat = authFullyPasses
+    ? ' Sender authentication (SPF/DKIM/DMARC) passes, which confirms the sending infrastructure is legitimate — it does NOT confirm the account or its content are trustworthy; a compromised or freely-created account authenticates just as cleanly as a genuine one.'
+    : '';
+
+  let spamClass, spamLabel, spamDesc;
+  if(spamScore < 20){
+    spamClass='spam-low'; spamLabel='LOW'; spamDesc='No meaningful bulk-mail markers detected.';
+  } else if(spamScore < 50){
+    spamClass='spam-med'; spamLabel='MEDIUM';
+    spamDesc = hasDeceptionEvidence
+      ? 'Some promotional/bulk-mail markers, alongside impersonation or authentication findings elsewhere in this report — treat with real caution, not just as marketing.'
+      : 'Some promotional/bulk-mail markers (tracking links, marketing copy). No impersonation or authentication evidence was found elsewhere in this report, but that does not confirm this message is safe — this tool cannot recognize every impersonation attempt or non-English phishing pattern.' + authCaveat + ' Review the findings below before trusting it.';
+  } else {
+    spamClass='spam-high'; spamLabel='HIGH';
+    spamDesc = hasDeceptionEvidence
+      ? 'Strong bulk-mail signal AND impersonation/authentication findings elsewhere in this report — treat as likely phishing, not just unwanted marketing.'
+      : 'Strong bulk/promotional-mail signal. No impersonation or authentication evidence was found elsewhere in this report, but the absence of a known pattern is not proof of safety.' + authCaveat + ' Verify the sender through an independent channel before trusting any link, attachment, or request in this message.';
+  }
+
+  let identityClass, identityLabel, identityDesc;
+  if(identityScore < 15){ identityClass='identity-low'; identityLabel='LEGITIMATE'; identityDesc='Sender identity checks align — appears to be from legitimate organization.'; }
+  else if(identityScore < 40){ identityClass='identity-med'; identityLabel='QUESTIONABLE'; identityDesc='Sender identity has inconsistencies — misaligned domains or generic addresses.'; }
+  else { identityClass='identity-high'; identityLabel='SPOOFED'; identityDesc='Strong evidence of sender spoofing or impersonation detected.'; }
+
+  const sevOrder = {high:0, med:1, low:2, info:3};
+  findings.sort((a,b)=> sevOrder[a.sev]-sevOrder[b.sev]);
+
+  return {
+    findings, score, spamScore, impersonationScore, identityScore,
+    vClass, vLabel, vDesc,
+    spamClass, spamLabel, spamDesc,
+    identityClass, identityLabel, identityDesc,
+    hasDeceptionEvidence, authFullyPasses, authCaveat,
+    customBrandsApplied,
+    fromRaw, returnPath, replyTo, subject, messageId, headerDate,
+    receivedHops: receivedAll.length,
+    bodyLinkDomains, bodyText,
+    spf, dkim, dmarc
+  };
+}
+
+// Pure rendering: takes the data analyzeHeaders() returned and builds the
+// report HTML string. Every dynamic value here can originate from an
+// attacker-controlled email, so everything user-supplied is escaped via
+// escapeHtml() before insertion — see the comment on escapeHtml() above.
+function renderReportHtml(data){
+  const {
+    findings, score, spamScore, impersonationScore,
+    vClass, vLabel, vDesc,
+    spamClass, spamLabel, spamDesc,
+    identityClass, identityLabel, identityDesc,
+    hasDeceptionEvidence, authFullyPasses, authCaveat, customBrandsApplied,
+    fromRaw, returnPath, replyTo, subject, messageId, headerDate,
+    receivedHops, bodyLinkDomains, bodyText,
+    spf, dkim, dmarc
+  } = data;
+
+  let html = '';
+
+  // Impersonation banner
+  if(impersonationScore >= 40){
+    html += `<div class="impersonate-banner banner-high">
+      <span class="b-icon">${WARN_ICON}</span>
+      <div><div class="b-title">🎭 BRAND IMPERSONATION DETECTED</div>
+      <div class="b-desc">This email impersonates a legitimate organization. Display name/subject claims one entity but sender domain and/or links point elsewhere. Classic phishing technique — do not click links, do not download attachments, do not enter credentials.</div></div>
+    </div>`;
+  }
+
+  // Spam banner — wording branches on hasDeceptionEvidence (a message that
+  // ALSO shows impersonation/authentication evidence gets named more
+  // specifically), but severity styling and the underlying caution do not:
+  // every tier here stays a warning, never a reassurance, regardless of
+  // whether this tool happened to find deception evidence — see the comment
+  // on hasDeceptionEvidence above for why "found none" isn't "confirmed
+  // none."
+  if(spamScore >= 50 && hasDeceptionEvidence){
+    html += `<div class="spam-banner banner-high">
+      <span class="b-icon">${WARN_ICON}</span>
+      <div><div class="b-title">⚠ SPAM / PHISHING INDICATORS — HIGH (${spamScore})</div>
+      <div class="b-desc">Message shows strong signs of phishing or unsolicited bulk mail, alongside impersonation/authentication findings below. Treat links, offers, attachments, and credential requests with extreme skepticism.</div></div>
+    </div>`;
+  } else if(spamScore >= 50){
+    html += `<div class="spam-banner banner-high">
+      <span class="b-icon">${WARN_ICON}</span>
+      <div><div class="b-title">⚠ HIGH BULK-MAIL SIGNAL — VERIFY BEFORE TRUSTING (${spamScore})</div>
+      <div class="b-desc">Strong bulk/promotional-mail patterns (tracking links, marketing copy, hidden content, or similar).${authCaveat} No specific brand impersonation was matched, but this tool only recognizes threats it has a known pattern for — that is not a clean bill of health. Treat links, attachments, and any request in this message with real caution until you've verified the sender independently.</div></div>
+    </div>`;
+  } else if(spamScore >= 20 && hasDeceptionEvidence){
+    html += `<div class="spam-banner banner-med">
+      <span class="b-icon">${WARN_ICON}</span>
+      <div><div class="b-title">⚠ Possible spam / phishing markers (${spamScore})</div>
+      <div class="b-desc">Moderate bulk-mail signal, alongside impersonation/authentication findings below. Review before trusting sender or clicking links.</div></div>
+    </div>`;
+  } else if(spamScore >= 20){
+    html += `<div class="spam-banner banner-med">
+      <span class="b-icon">${WARN_ICON}</span>
+      <div><div class="b-title">⚠ Bulk-mail markers present (${spamScore})</div>
+      <div class="b-desc">Some bulk-mail markers found. No specific impersonation evidence was matched, but that does not confirm this message is safe — review the findings below before trusting any link or attachment.</div></div>
+    </div>`;
+  }
+
+  // Main verdict card
+  html += `<div class="verdict-card ${vClass}">`;
+  html += `  <div class="gauge-wrap">${drawGauge(score, vClass)}<div class="gauge-label">${score}</div><div class="gauge-sub">RISK SCORE</div></div>`;
+  html += `  <div class="verdict-text"><div class="badge">${vLabel}</div><div class="desc">${vDesc}</div></div>`;
+  html += `</div>`;
+
+  // Spam + Identity signal cards
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">`;
+  html += `<div class="spam-card">`;
+  html += `  <div><div class="s-label">Bulk/Marketing Signal</div><div class="s-desc">${spamDesc}</div></div>`;
+  html += `  <span class="spam-pill ${spamClass}">${spamLabel}</span>`;
+  html += `</div>`;
+  html += `<div class="spam-card">`;
+  html += `  <div><div class="s-label">Sender Identity</div><div class="s-desc">${identityDesc}</div></div>`;
+  html += `  <span class="identity-pill ${identityClass}">${identityLabel}</span>`;
+  html += `</div>`;
+  html += `</div>`;
+
+  // Authentication section
+  html += '<div class="section-title">Authentication Status</div>';
+  html += '<div class="extract-card"><div class="extract-row"><div class="k">SPF / DKIM / DMARC</div><div class="v auth-pills">';
+  [['SPF',spf],['DKIM',dkim],['DMARC',dmarc]].forEach(([label,val])=>{
+    html += `<span class="pill ${pillClass(val)}">${label}: ${val ? val.toUpperCase() : 'N/A'}</span>`;
+  });
+  html += '</div></div></div>';
+
+  // Findings
+  html += `<div class="section-title">Findings (${findings.length})</div>`;
+  if(findings.length===0){
+    html += '<div class="findings-list"><div class="empty-note">No scoring findings — all checks passed.</div></div>';
+  } else {
+    html += '<div class="findings-list">';
+    findings.forEach(f=>{
+      const catLabel = f.cat ? f.cat : 'structure';
+      html += `<div class="finding sev-${f.sev}">
+        <span class="sev-icon">${ICONS[f.sev]}</span>
+        <div>
+          <span class="f-key"><span class="cat-chip cat-${catLabel}">${catLabel}</span>${escapeHtml(f.key)}</span>
+          <span class="f-detail">${escapeHtml(f.detail)}</span>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // Extracted fields
+  html += '<div class="section-title">Extracted Fields</div>';
+  html += '<div class="extract-card">';
+  html += `<div class="extract-row"><div class="k">From</div><div class="v">${escapeHtml(fromRaw)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Return-Path</div><div class="v">${escapeHtml(returnPath)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Reply-To</div><div class="v">${escapeHtml(replyTo)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Subject</div><div class="v">${escapeHtml(subject)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Message-ID</div><div class="v">${escapeHtml(messageId)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Date Header</div><div class="v">${escapeHtml(headerDate)||'—'}</div></div>`;
+  html += `<div class="extract-row"><div class="k">Received hops</div><div class="v">${receivedHops}</div></div>`;
+  if(bodyLinkDomains.length > 0){
+    html += `<div class="extract-row"><div class="k">Body link domains</div><div class="v">${escapeHtml(bodyLinkDomains.join(', '))}</div></div>`;
+  }
+  if(customBrandsApplied.length > 0){
+    // Confirmation that custom brand config actually took effect on this
+    // specific analysis — not just parsed as you type, but in play for the
+    // result you're looking at right now.
+    html += `<div class="extract-row"><div class="k">Custom brands applied</div><div class="v">${escapeHtml(customBrandsApplied.map(k => k.toUpperCase()).join(', '))}</div></div>`;
+  }
+  html += '</div>';
+
+  if(bodyText && bodyText.trim().length > 15){
+    html += '<div class="section-title">Body Analysis</div>';
+    html += '<div class="extract-card"><div class="extract-row"><div class="k">Status</div><div class="v">MIME body decoded and scanned for links, brand references, obfuscation patterns, and fragmentation (see findings above).</div></div></div>';
+  }
+
+  html += '<div class="footer-note"><strong>Interpretation:</strong> Risk Score (0–100) reflects spoofing/authentication risk; Bulk/Marketing Signal reflects unsolicited or promotional bulk-mail patterns — high on its own is not phishing evidence, it means "looks like mass marketing"; Sender Identity reflects legitimacy of claimed sender. A message can pass authentication yet still be phishing (compromised account, well-forged headers) — always weigh the Risk Score and any impersonation findings above bulk-mail styling. High marks on any axis warrant caution. Always verify urgent requests (credentials, payment, sensitive data) through an independent channel before responding. If you don\'t recognize the sender or weren\'t expecting this email, don\'t click links — navigate directly to the official website or call the organization using a phone number you trust.</div>';
+
+  return html;
+}
+
+function doAnalyze(rawInput){
+  const customBrandsEl = document.getElementById('customBrands');
+  const data = analyzeHeaders(rawInput, customBrandsEl ? customBrandsEl.value : '');
+  document.getElementById('result').innerHTML = renderReportHtml(data);
+}
+
+// ============================================
+// SELF-TESTS (regression guard)
+// ============================================
+// This is a single static file with no build/test infrastructure. Every bug
+// found in past review rounds — a case-sensitive brand regex, "ups" matching
+// inside "groups", a dropped last header field, stored XSS — was only ever
+// caught by hand-pasting sample headers into the UI, which catches nothing
+// automatically on the next change. Load this file with ?selftest=1 to run
+// these scenarios instead of the normal UI and see a pass/fail report.
+const SELF_TEST_CASES = [
+  {
+    name: 'Legitimate PayPal receipt scores low with no findings',
+    raw: 'From: PayPal <service@paypal.com>\nSubject: Your receipt\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nThanks for your payment. View it at https://paypal.com/receipts',
+    assert: (d) => d.vClass === 'v-low' && d.findings.length === 0
+  },
+  {
+    name: 'Case-varied "Paypal" display name is still caught (brand regex case-sensitivity)',
+    raw: 'From: Paypal Security <security@paypal-alerts-billing.com>\nSubject: Your account has been limited\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nPlease confirm your details at http://paypal-alerts-billing.com/login',
+    assert: (d) => d.vClass === 'v-high' && d.findings.some(f => f.key.includes('Sender domain mismatch: PAYPAL'))
+  },
+  {
+    name: 'Lookalike domain with no display name is caught and correctly labeled',
+    raw: 'From: <alerts@paypal-verify-secure.com>\nSubject: Account Notice\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nPlease verify at http://paypal-verify-secure.com/login',
+    assert: (d) => d.vClass === 'v-high' && d.findings.some(f => f.key.includes('Lookalike sending domain: PAYPAL'))
+  },
+  {
+    name: 'Ordinary "study groups" mail does not false-positive as a UPS mention',
+    raw: 'From: Alice Dupont <alice.dupont@gmail.com>\nSubject: Notes from our study groups this week\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nHi team, quick recap of the study groups and signups for next week\'s meetups.',
+    assert: (d) => !d.findings.some(f => f.key.includes('UPS'))
+  },
+  {
+    name: 'Header block with no trailing newline still extracts the last header',
+    raw: 'From: Alice <alice@example.com>\nSubject: No trailing newline test',
+    assert: (d) => d.subject === 'No trailing newline test'
+  },
+  {
+    name: 'Attacker-controlled header text is escaped, not executed, in the rendered report',
+    raw: 'From: <img src=x onerror="window.__xssFired=true"> <attacker@evil.com>\nSubject: Test\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nBody text.',
+    assert: (d, html) => !/<img[^>]*onerror/i.test(html) && html.includes('&lt;img')
+  },
+  {
+    name: 'RFC 2047 base64-encoded "PayPal Security" display name is decoded and still caught',
+    raw: 'From: =?UTF-8?B?UGF5UGFsIFNlY3VyaXR5?= <security@paypal-alerts-billing.com>\nSubject: Account Notice\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nVerify at http://paypal-alerts-billing.com/login',
+    assert: (d) => d.fromRaw.includes('PayPal Security') && d.findings.some(f => f.key.includes('Sender domain mismatch: PAYPAL'))
+  },
+  {
+    name: 'Mixed-script (Cyrillic/Latin) homoglyph display name is flagged',
+    raw: 'From: PаyPal Security <security@evil.com>\nSubject: Account\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nVerify now.',
+    assert: (d) => d.findings.some(f => f.key.includes('Mixed-script'))
+  },
+  {
+    name: 'Confirmed brand impersonation is reflected in the Sender Identity axis, not just the Risk Score',
+    // Live-observed bug: a display name that echoes the brand name AND a
+    // lookalike domain that also echoes it read as "aligned" to
+    // detectDisplayNameMismatch (the whole point of this exact attack), so
+    // identityScore stayed near zero and "Sender Identity" showed LEGITIMATE
+    // while the Risk Score and impersonation banner both screamed HIGH RISK.
+    raw: 'From: PayPal Security Team <alerts@paypal-secure-verification.com>\nSubject: Account Notice\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nVerify at http://paypal-secure-verification.com/login',
+    assert: (d) => d.identityLabel !== 'LEGITIMATE' && d.identityScore >= 40
+  },
+  {
+    name: 'SPF softfail produces a medium auth finding',
+    raw: 'From: Alice <alice@example.com>\nReceived-SPF: softfail (domain owner discourages use of this host)\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nHello.',
+    assert: (d) => d.findings.some(f => f.key.includes('SPF softfail'))
+  },
+  {
+    name: 'Custom brand config catches an org-specific lookalike domain',
+    raw: 'From: Acme Corp Support <help@acme-corp-support.net>\nSubject: Notice\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nSee http://acme-corp-support.net',
+    customBrands: 'acmecorp | acme.com | Acme Corp;Acme',
+    assert: (d) => d.findings.some(f => f.key.includes('Sender domain mismatch: ACMECORP'))
+  },
+  {
+    name: 'Ordinary "please" does not false-positive as a real-estate topic (regression: unbounded "lease")',
+    raw: 'From: Alice <alice@example.com>\nSubject: Please review\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nHi, please see the attached update and let me know your thoughts. Also please confirm you received this note, thanks.',
+    assert: (d) => !d.findings.some(f => f.key.includes('Unrelated topics'))
+  },
+  {
+    name: 'Display name matching the organization label of an ESP-style subdomain is not flagged as misaligned',
+    // Live-observed bug: "Experian" <email@notify.experian.co.uk> was flagged
+    // misaligned because the check compared against fromDomain.split('.')[0]
+    // ("notify") only, discarding "experian" entirely.
+    raw: 'From: "Experian" <email@notify.experian.co.uk>\nSubject: Your credit report is ready\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nView your report using the link below.',
+    assert: (d) => !d.findings.some(f => f.key.includes('Display name / domain misalignment'))
+  },
+  {
+    name: 'Non-clickable asset URLs (webfonts) are excluded from body link domains',
+    raw: 'From: Alice <alice@example.com>\nSubject: Test\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nContent-Type: text/html; charset=utf-8\n\n<html><head><style>@font-face{font-family:X;src:url(https://fonts.gstatic.com/s/roboto/v1/abc.woff2);}</style></head><body><p>Hello <a href="https://alice-example.com/page">click here</a></p></body></html>',
+    assert: (d) => !d.bodyLinkDomains.includes('fonts.gstatic.com') && d.bodyLinkDomains.includes('alice-example.com')
+  },
+  {
+    name: 'Fully-authenticated bulk marketing mail is framed as bulk mail, not phishing, despite an elevated spam score',
+    // End-to-end regression for the live Experian case: SPF/DKIM/DMARC all
+    // pass, no impersonation, but real bulk-mail structure (hidden preheader
+    // spacer, Precedence: bulk with no List-Unsubscribe) legitimately earns
+    // spamScore >= 20. The report must not brand this "phishing".
+    raw: 'From: "Acme" <notify@updates.acme.com>\nSubject: Your monthly statement is ready\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nPrecedence: bulk\nReceived-SPF: pass\nAuthentication-Results: mx.example.com; spf=pass smtp.mailfrom=updates.acme.com; dkim=pass header.i=@updates.acme.com; dmarc=pass (p=reject) header.from=updates.acme.com\nContent-Type: text/html; charset=utf-8\n\n<html><body><div style="display:none;width:0px;height:0px;">spacer</div><p>Please view your statement using the link below.</p><p><a href="https://click.updates.acme.com/view?id=123">View statement</a></p></body></html>',
+    // Checks for the specific banner heading, not the bare word "phishing" —
+    // that word legitimately still appears in the standing footer disclaimer
+    // ("a message can pass authentication yet still be phishing...").
+    assert: (d, html) => d.spamScore >= 20 && d.hasDeceptionEvidence === false && !html.includes('SPAM / PHISHING INDICATORS') && !html.includes('spam / phishing markers') && html.includes('Bulk')
+  },
+  {
+    name: 'Genuine HMRC notification from tax.service.gov.uk is not flagged as brand impersonation',
+    // Live-observed bug: HMRC's real transactional domain is
+    // tax.service.gov.uk, not hmrc.gov.uk, so a genuine, fully-authenticated
+    // (SPF/DKIM/DMARC pass) HMRC email failed its own brand-authorization
+    // check — twice over: once against the curated brand list (fixed via the
+    // tax.service.gov.uk alt + the service.gov.uk root-domain suffix), and
+    // again via the generic display-name/domain substring check ("hmrc"/
+    // "digital" never appear in "tax.service.gov.uk" by design — fixed via
+    // recognizedAsAuthorizedBrand suppressing that check once the brand list
+    // already vouches for the pairing).
+    raw: 'From: HMRC digital <noreply@tax.service.gov.uk>\nSubject: HMRC paperless notifications: new message\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nReceived-SPF: pass\nAuthentication-Results: mx.example.com; spf=pass smtp.mailfrom=noreply@tax.service.gov.uk; dkim=pass header.i=@tax.service.gov.uk; dmarc=pass (p=reject) header.from=tax.service.gov.uk\n\nYou have a new message from HMRC about Self Assessment. Sign in to your HMRC online account to view it.',
+    assert: (d) => d.impersonationScore === 0 && !d.findings.some(f => f.key.includes('misalignment') || f.key.includes('impersonation') || f.key.includes('mismatch'))
+  },
+  {
+    name: 'Custom-brands feedback: a well-formed line is recognized and a malformed one is flagged, not silently dropped',
+    // There used to be no way to tell "I typed something and it's in effect"
+    // from "I typed something and it was silently ignored" until an Analyze
+    // click did or didn't produce a finding. describeCustomBrands() must
+    // report both outcomes so the UI can show live feedback as you type, and
+    // the analysis result itself must record which brands were actually used.
+    raw: 'From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\n\nHello.',
+    customBrands: 'acmecorp | acme.com | Acme Corp\nthis line is missing pipes',
+    assert: (d) => {
+      const desc = describeCustomBrands('acmecorp | acme.com | Acme Corp\nthis line is missing pipes');
+      return desc.validKeys.length === 1 && desc.validKeys[0] === 'acmecorp' &&
+        desc.invalidLines.length === 1 && desc.invalidLines[0].lineNumber === 2 &&
+        d.customBrandsApplied.length === 1 && d.customBrandsApplied[0] === 'acmecorp';
+    }
+  },
+  {
+    name: 'A block repeated 3+ times in HTML body is caught as content padding (regression: stripHtmlToText collapsed all newlines, so this could never fire)',
+    raw: 'From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nContent-Type: text/html\n\n<div>Thank you for sending this through.</div><div>Thank you for sending this through.</div><div>Thank you for sending this through.</div><div>Something genuinely different here.</div>',
+    assert: (d) => d.findings.some(f => f.key.includes('repetition'))
+  },
+  {
+    name: 'A 1x1 hidden <div> container is flagged',
+    raw: 'From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nContent-Type: text/html\n\n<div style="width:1px;height:1px;">hidden filler text nobody should see here</div>',
+    assert: (d) => d.findings.some(f => f.key.includes('Near-zero-size hidden container'))
+  },
+  {
+    name: 'A 1x1 tracking-pixel <img> alone does not trigger the hidden-container check (benign ESP open-tracking pattern)',
+    raw: 'From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nContent-Type: text/html\n\n<p>Hello there, this is a perfectly normal short email.</p><img src="https://esp.example.com/open.gif" style="width:1px;height:1px;">',
+    assert: (d) => !d.findings.some(f => f.key.includes('Near-zero-size hidden container'))
+  },
+  {
+    name: 'List-Unsubscribe pointing to a domain unrelated to the sender is flagged',
+    raw: "From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nList-Unsubscribe: <https://accounts.snapchat.com/subscription_center.aspx?x=1>\n\nHello.",
+    assert: (d) => d.findings.some(f => f.key.includes('Unsubscribe link domain unrelated'))
+  },
+  {
+    name: "List-Unsubscribe pointing to the sender's own domain is not flagged",
+    raw: 'From: Alice <alice@example.com>\nSubject: Hi\nDate: Mon, 01 Jan 2024 00:00:00 +0000\nList-Unsubscribe: <https://example.com/unsubscribe?x=1>\n\nHello.',
+    assert: (d) => !d.findings.some(f => f.key.includes('Unsubscribe link domain unrelated'))
+  },
+  {
+    name: 'Regression: throwaway-account scam (padded quote-chain + hijacked unsubscribe + 1x1 hidden div) no longer scores LOW RISK',
+    // Live-observed: a fully SPF/DKIM/DMARC-passing throwaway Outlook account,
+    // human-name display name, non-English content, and a hidden 1x1 element
+    // (not exactly 0px) combined to defeat every single check in the tool at
+    // once, scoring 0 / LOW RISK despite a hijacked Snapchat unsubscribe link
+    // and a scam narrative padded with a repeated fake quote-chain.
+    raw: 'From: "Marta Kostyuk" <janellantonious710@outlook.com>\nSubject: Re: TR: Re: TR: Nuove proposte per l\'oggetto\nDate: Tue, 08 Sep 2026 11:59:06 +0100\nList-Unsubscribe: <https://accounts.snapchat.com/subscription_center.aspx?x=1>\nContent-Type: text/html\n\n<section style="width:1px;height:1px;"><div>Thank you for sending this through.</div><div>Thank you for sending this through.</div><div>Thank you for sending this through.</div></section><div>RICHIEDI IL TUO KIT MEDICO GRATUITO</div>',
+    assert: (d) => d.vClass !== 'v-low'
+  }
+];
+
+function runSelfTests(){
+  return SELF_TEST_CASES.map(tc => {
+    let pass = false, error = null;
+    try{
+      const data = analyzeHeaders(tc.raw, tc.customBrands || '');
+      const html = renderReportHtml(data);
+      pass = !!tc.assert(data, html);
+    }catch(e){ error = e && e.message ? e.message : String(e); }
+    return { name: tc.name, pass, error };
+  });
+}
+
+function renderSelfTestReport(results){
+  const passCount = results.filter(r => r.pass).length;
+  let html = `<div class="section-title">Self-Tests (${passCount}/${results.length} passed)</div>`;
+  html += '<div class="findings-list">';
+  results.forEach(r => {
+    const sev = r.pass ? 'pass' : 'high';
+    const icon = r.pass ? '✅' : ICONS.high;
+    html += `<div class="finding sev-${sev}">
+      <span class="sev-icon">${icon}</span>
+      <div>
+        <span class="f-key">${escapeHtml(r.name)}</span>
+        <span class="f-detail">${r.pass ? 'passed' : 'FAILED' + (r.error ? ' — ' + escapeHtml(r.error) : '')}</span>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+if(/[?&]selftest=1\b/.test(location.search)){
+  window.addEventListener('DOMContentLoaded', () => {
+    const result = document.getElementById('result');
+    result.style.display = 'block';
+    result.innerHTML = renderSelfTestReport(runSelfTests());
+  });
+}
+</script>
+</body>
+</html>
