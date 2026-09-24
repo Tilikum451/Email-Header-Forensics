@@ -3150,8 +3150,10 @@ function animateReportIn(){
 function doAnalyze(rawInput){
   const customBrandsEl = document.getElementById('customBrands');
   const data = analyzeHeaders(rawInput, customBrandsEl ? customBrandsEl.value : '');
-  document.getElementById('result').innerHTML = renderReportHtml(data);
+  const result = document.getElementById('result');
+  result.innerHTML = renderReportHtml(data);
   animateReportIn();
+  result.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ============================================
@@ -3422,7 +3424,7 @@ const SELF_TEST_CASES = [
   // ---- Regression tests for the extraction / false-positive fixes ----
   {
     name: 'Lowercase header field names (from:/subject:/date:) are parsed — RFC 5322 names are case-insensitive',
-    raw: 'from: Paypal Security <security@paypal-alerts-billing.com>\nsubject: Your accou nt has been limited\ndate: Mon, 01 Jan 2024 00:00:00 +0000\nmessage-id: <abc@paypal-alerts-billing.com>\n\nPlease confirm your details at http://paypal-alerts-billing.com/login',
+    raw: 'from: Paypal Security <security@paypal-alerts-billing.com>\nsubject: Your account has been limited\ndate: Mon, 01 Jan 2024 00:00:00 +0000\nmessage-id: <abc@paypal-alerts-billing.com>\n\nPlease confirm your details at http://paypal-alerts-billing.com/login',
     assert: (d) => d.vClass === 'v-high' && d.subject === 'Your account has been limited' && d.messageId === 'abc@paypal-alerts-billing.com' && d.findings.some(f => f.key.includes('Sender domain mismatch: PAYPAL'))
   },
   {
